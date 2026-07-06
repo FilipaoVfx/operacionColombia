@@ -615,11 +615,11 @@ interface Job {
 
 | Módulo | Ola | Depende de | Estado |
 |--------|-----|------------|--------|
-| M0 Scaffolding | 1 | — | PENDIENTE |
-| M1 Connector Engine ⭐ | 1 | M0 | PENDIENTE |
-| M2 Metadata/Lineage/Versioning/Freshness | 1 | M0, M1 | PENDIENTE |
-| M3 DIVIPOLA + Normalización ⭐ | 1 | M1 | PENDIENTE |
-| M4 Storage + CQRS | 1 | M3 | PENDIENTE |
+| M0 Scaffolding | 1 | — | HECHO (2026-07-06: layout, contratos, ADR-001..008, `npm test` 15/15) |
+| M1 Connector Engine ⭐ | 1 | M0 | HECHO (C1 Socrata + C2 ArcGIS; CLI `npm run connectors`; C3/C4 stub) |
+| M2 Metadata/Lineage/Versioning/Freshness | 1 | M0, M1 | HECHO (registry + versionado esquema + skip por etag/hash + etl_runs) |
+| M3 DIVIPOLA + Normalización ⭐ | 1 | M1 | HECHO (1122 municipios; resolución por código/nombre+depto; 100% depto en economía) |
+| M4 Storage + CQRS | 1 | M3 | PARCIAL (write store `data/osint.db` con upsert idempotente; proyección read model pendiente → M8) |
 | M5 Orchestration (colas/scheduler/streaming) | 2 | M1, M4 | PENDIENTE |
 | M6 Entity Resolution | 2 | M3, M4 | PENDIENTE |
 | M8 Materialized Views | 2 | M4 | PENDIENTE |

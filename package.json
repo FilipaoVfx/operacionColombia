@@ -1,7 +1,7 @@
 {
-  "name": "sivu",
-  "version": "1.0.0",
-  "description": "Sistema de Informacion Vial Unificada - ingesta y visualizacion de la red vial de Colombia (INVIAS). Backend sin dependencias (node:http + fetch + node:sqlite), frontend HTML + Tailwind.",
+  "name": "operacion-colombia",
+  "version": "2.0.0",
+  "description": "Plataforma OSINT de recursos publicos de Colombia. Piloto vial SIVU + motor de conectores (Socrata/ArcGIS) + modelo unificado con linaje. Cero dependencias (node:http, node:sqlite, node:zlib).",
   "type": "module",
   "private": true,
   "engines": {
@@ -10,6 +10,9 @@
   "scripts": {
     "ingest": "node --experimental-sqlite src/ingest.js",
     "start": "node --experimental-sqlite src/server.js",
-    "dev": "node --experimental-sqlite --watch src/server.js"
+    "dev": "node --experimental-sqlite --watch src/server.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "connectors": "node services/connectors/cli.js",
+    "etl": "node services/connectors/cli.js run --all"
   }
 }

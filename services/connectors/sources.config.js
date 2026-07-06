@@ -1,0 +1,100 @@
+// Registro de fuentes (PLANNING M1). Añadir un dominio nuevo = añadir una entrada aquí.
+// mapRow(row, ctx) devuelve lo que buildRecord necesita; ctx.resolver es DivipolaResolver (M3).
+import { validateSourceConfig } from "../../packages/contracts/index.js";
+
+export const SOURCES = [
+  {
+    id: "gdxc-w37w",
+    kind: "socrata",
+    domain: "territorio",
+    nombre: "DANE — DIVIPOLA códigos municipios",
+    endpoint: "https://www.datos.gov.co/resource/gdxc-w37w.json",
+    licencia: "CC BY-SA 4.0 (datos.gov.co)",
+    priority: "P0",
+    schedule: "anual",
+    // fuente maestra: además de registros unificados, puebla la tabla divipola (ver cli.js)
+    isDivipolaMaster: true,
+    mapRow(row) {
+      const num = (s) => Number(String(s ?? "").replace(",", "."));
+      return {
+        idFuente: row.cod_mpio ?? row[":id"],
+        campos: {
+          cod_dpto: row.cod_dpto, dpto: row.dpto,
+          cod_mpio: row.cod_mpio, nom_mpio: row.nom_mpio,
+          tipo: row.tipo_municipio,
+        },
+        extra: row,
+        geom: Number.isFinite(num(row.longitud)) && Number.isFinite(num(row.latitud))
+          ? { type: "Point", coordinates: [num(row.longitud), num(row.latitud)] }
+          : null,
+        divipola: { codigo: row.cod_mpio },
+        searchBlob: `${row.cod_mpio} ${row.nom_mpio} ${row.dpto}`,
+      };
+    },
+  },
+  {
+    id: "kgyi-qc7j",
+    kind: "socrata",
+    domain: "economia",
+    nombre: "DANE — PIB departamental por actividad",
+    endpoint: "https://www.datos.gov.co/resource/kgyi-qc7j.json",
+    licencia: "CC BY-SA 4.0 (datos.gov.co)",
+    priority: "P1",
+    schedule: "anual",
+    mapRow(row, ctx) {
+      const codDepto = ctx.resolver?.resolveDepto({
+        codigo: row.c_digo_departamento_divipola,
+        nombre: row.departamento,
+      });
+      return {
+        idFuente: row[":id"],
+        campos: {
+          anio: Number(row.a_o) || row.a_o,
+          actividad: row.actividad,
+          sector: row.sector,
+          tipo_precios: row.tipo_de_precios,
+          departamento: row.departamento,
+          valor_miles_millones: Number(row.valor_miles_de_millones_de) || null,
+        },
+        extra: row,
+        deptoCode: codDepto,
+        searchBlob: `${row.departamento} ${row.actividad} ${row.sector} ${row.a_o}`,
+      };
+    },
+  },
+  {
+    id: "invias-red-vial",
+    kind: "arcgis",
+    domain: "vial",
+    nombre: "INVIAS — Red Vial Nacional (ArcGIS)",
+    endpoint: "https://hermes2.invias.gov.co/server/rest/services/MapaCarreteras/RedVial/MapServer/1",
+    licencia: "Datos abiertos INVIAS",
+    priority: "P0",
+    schedule: "mensual",
+    mapRow(feature) {
+      const p = feature.properties || {};
+      return {
+        idFuente: p.globalid || p.objectid,
+        campos: {
+          codigo_vial: p.codigotramo ?? null,
+          nombre_tramo: p.nombretramo || p.nombreruta || p.sector || "Sin nombre",
+          ruta: p.nombreruta ?? null,
+          sector: p.sector ?? null,
+          categoria_code: p.categoria ?? null,
+          superficie_code: p.superficie ?? null,
+          territorial_code: p.territorial ?? null,
+          st_length_m: p["st_length(shape)"] ?? null,
+        },
+        extra: p,
+        geom: feature.geometry ?? null,
+        searchBlob: `${p.codigotramo ?? ""} ${p.nombretramo ?? ""} ${p.nombreruta ?? ""} ${p.sector ?? ""}`,
+      };
+    },
+  },
+].map(validateSourceConfig);
+
+export function getSource(id) {
+  const s = SOURCES.find((s) => s.id === id);
+  if (!s) throw new Error(`fuente desconocida: ${id}. Disponibles: ${SOURCES.map((x) => x.id).join(", ")}`);
+  return s;
+}

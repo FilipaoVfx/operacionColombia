@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIVU · Red Vial Nacional de Colombia</title>
+
+  <!-- Tailwind (CDN, sin build) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: { 900: "#0b1120", 800: "#0f172a", 700: "#1e293b", 600: "#334155" },
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Chart.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+  <style>
+    html, body { height: 100%; }
+    #map { background: #0b1120; }
+    .leaflet-container { font-family: inherit; }
+    .leaflet-popup-content-wrapper { background:#0f172a; color:#e2e8f0; border-radius:10px; }
+    .leaflet-popup-tip { background:#0f172a; }
+    .leaflet-popup-content { margin:12px 14px; font-size:13px; }
+    .leaflet-bar a { background:#1e293b; color:#e2e8f0; border-color:#334155; }
+    .leaflet-bar a:hover { background:#334155; }
+    .scroll-thin::-webkit-scrollbar { width:8px; height:8px; }
+    .scroll-thin::-webkit-scrollbar-thumb { background:#334155; border-radius:8px; }
+    .scroll-thin::-webkit-scrollbar-track { background:transparent; }
+    th[data-sort] { cursor:pointer; }
+    th[data-sort]:hover { color:#93c5fd; }
+  </style>
+</head>
+
+<body class="h-full bg-ink-900 text-slate-200 antialiased overflow-hidden">
+  <div class="flex h-full flex-col">
+
+    <!-- ===== Header ===== -->
+    <header class="flex items-center gap-4 border-b border-ink-700 bg-ink-800 px-4 py-2.5 shrink-0">
+      <div class="flex items-center gap-2.5">
+        <div class="grid h-9 w-9 place-items-center rounded-lg bg-blue-600 font-bold text-white">SI</div>
+        <div>
+          <h1 class="text-sm font-semibold leading-tight text-white">SIVU · Sistema de Información Vial Unificada</h1>
+          <p id="sourceLine" class="text-[11px] leading-tight text-slate-400">Red Vial Nacional · INVIAS</p>
+        </div>
+      </div>
+
+      <!-- Buscador con autocompletado -->
+      <div class="relative ml-auto w-full max-w-md">
+        <input id="search" type="text" autocomplete="off" placeholder="Buscar tramo, código vial, ruta…"
+          class="w-full rounded-lg border border-ink-600 bg-ink-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-blue-500" />
+        <div id="searchResults"
+          class="absolute z-[1200] mt-1 hidden max-h-80 w-full overflow-auto rounded-lg border border-ink-600 bg-ink-800 shadow-xl scroll-thin"></div>
+      </div>
+
+      <a href="https://hermes2.invias.gov.co" target="_blank" rel="noopener"
+         class="hidden shrink-0 rounded-lg border border-ink-600 px-3 py-2 text-xs text-slate-300 hover:bg-ink-700 sm:block">Fuente oficial ↗</a>
+    </header>
+
+    <!-- ===== Cuerpo: filtros | mapa | panel ===== -->
+    <div class="flex min-h-0 flex-1">
+
+      <!-- Filtros -->
+      <aside class="hidden w-72 shrink-0 flex-col border-r border-ink-700 bg-ink-800 lg:flex">
+        <div class="flex items-center justify-between px-4 py-3">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Filtros</h2>
+          <button id="resetFilters" class="text-xs text-blue-400 hover:text-blue-300">Limpiar</button>
+        </div>
+        <div class="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 pb-6 scroll-thin">
+
+          <div>
+            <label class="mb-1.5 block text-xs font-medium text-slate-400">Departamento</label>
+            <select id="fDepartamento"
+              class="w-full rounded-lg border border-ink-600 bg-ink-900 px-2.5 py-2 text-sm outline-none focus:border-blue-500">
+              <option value="">Todos los departamentos</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="mb-1.5 block text-xs font-medium text-slate-400">Otras territoriales
+              <span class="text-[10px] normal-case text-slate-500">(no departamentales)</span>
+            </label>
+            <div id="fTerritorial" class="space-y-1.5"></div>
+          </div>
+
+          <div>
+            <label class="mb-1.5 block text-xs font-medium text-slate-400">Tipo de vía</label>
+            <div id="fTipo" class="space-y-1.5"></div>
+          </div>
+
+          <div>
+            <label class="mb-1.5 block text-xs font-medium text-slate-400">Superficie</label>
+            <div id="fSuperficie" class="space-y-1.5"></div>
+          </div>
+
+          <div>
+            <label class="mb-1.5 block text-xs font-medium text-slate-400">Pavimentación</label>
+            <div id="fPav" class="space-y-1.5 text-sm">
+              <label class="flex items-center gap-2"><input type="radio" name="pav" value="" checked class="accent-blue-500"> Todas</label>
+              <label class="flex items-center gap-2"><input type="radio" name="pav" value="1" class="accent-blue-500"> Pavimentada</label>
+              <label class="flex items-center gap-2"><input type="radio" name="pav" value="0" class="accent-blue-500"> Sin pavimentar</label>
+            </div>
+          </div>
+
+          <div>
+            <label class="mb-1.5 block text-xs font-medium text-slate-400">Administrador</label>
+            <div id="fAdmin" class="space-y-1.5"></div>
+          </div>
+
+          <div class="border-t border-ink-700 pt-4">
+            <label class="mb-1.5 block text-xs font-medium text-slate-400">Colorear mapa por</label>
+            <select id="colorBy"
+              class="w-full rounded-lg border border-ink-600 bg-ink-900 px-2.5 py-2 text-sm outline-none focus:border-blue-500">
+              <option value="tipo_vial">Tipo de vía</option>
+              <option value="superficie">Superficie</option>
+              <option value="administrador">Administrador</option>
+            </select>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Mapa + tabla -->
+      <main class="relative flex min-w-0 flex-1 flex-col">
+        <div class="relative min-h-0 flex-1">
+          <div id="map" class="absolute inset-0"></div>
+
+          <!-- badge de carga -->
+          <div class="pointer-events-none absolute left-3 top-3 z-[1000] flex items-center gap-2">
+            <span id="loadBadge" class="rounded-md bg-ink-800/90 px-2.5 py-1 text-xs text-slate-300 ring-1 ring-ink-600">cargando…</span>
+            <span id="spinner" class="hidden h-4 w-4 animate-spin rounded-full border-2 border-slate-500 border-t-blue-400"></span>
+          </div>
+
+          <!-- leyenda -->
+          <div id="legend" class="absolute bottom-3 left-3 z-[1000] hidden max-w-[220px] rounded-lg bg-ink-800/95 p-3 text-xs ring-1 ring-ink-600"></div>
+
+          <!-- toggle tabla -->
+          <button id="toggleTable"
+            class="absolute bottom-3 right-3 z-[1000] rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-lg hover:bg-blue-500">
+            ▤ Ver tabla
+          </button>
+        </div>
+
+        <!-- Panel tabla (colapsable) -->
+        <section id="tablePanel" class="hidden h-72 shrink-0 flex-col border-t border-ink-700 bg-ink-800">
+          <div class="flex items-center gap-3 border-b border-ink-700 px-4 py-2">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Tramos</h3>
+            <span id="tableCount" class="text-xs text-slate-500"></span>
+            <div class="ml-auto flex items-center gap-2">
+              <button id="exportCsv" class="rounded-md border border-ink-600 px-2.5 py-1 text-xs hover:bg-ink-700">⬇ CSV</button>
+              <button id="exportJson" class="rounded-md border border-ink-600 px-2.5 py-1 text-xs hover:bg-ink-700">⬇ JSON</button>
+              <button id="closeTable" class="rounded-md px-2 py-1 text-xs text-slate-400 hover:text-white">✕</button>
+            </div>
+          </div>
+          <div class="min-h-0 flex-1 overflow-auto scroll-thin">
+            <table class="w-full text-left text-xs">
+              <thead class="sticky top-0 bg-ink-700 text-slate-300">
+                <tr>
+                  <th data-sort="codigo_vial" class="px-3 py-2">Código</th>
+                  <th data-sort="nombre_tramo" class="px-3 py-2">Tramo</th>
+                  <th data-sort="tipo_vial" class="px-3 py-2">Tipo</th>
+                  <th data-sort="superficie" class="px-3 py-2">Superficie</th>
+                  <th data-sort="region" class="px-3 py-2">Región</th>
+                  <th data-sort="administrador" class="px-3 py-2">Administrador</th>
+                  <th data-sort="longitud_km" class="px-3 py-2 text-right">Long. (km)</th>
+                </tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+          <div class="flex items-center justify-between border-t border-ink-700 px-4 py-2 text-xs">
+            <button id="pgPrev" class="rounded-md border border-ink-600 px-2.5 py-1 hover:bg-ink-700 disabled:opacity-40">← Anterior</button>
+            <span id="pgInfo" class="text-slate-400"></span>
+            <button id="pgNext" class="rounded-md border border-ink-600 px-2.5 py-1 hover:bg-ink-700 disabled:opacity-40">Siguiente →</button>
+          </div>
+        </section>
+      </main>
+
+      <!-- Panel KPIs + gráficos -->
+      <aside class="hidden w-96 shrink-0 flex-col border-l border-ink-700 bg-ink-800 xl:flex">
+        <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 scroll-thin">
+          <div class="flex items-center justify-between">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Indicadores</h2>
+            <span id="kpiScope" class="text-[11px] text-slate-500">toda la red</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="rounded-xl bg-ink-700 p-3">
+              <div id="kpiKm" class="text-2xl font-bold text-white">—</div>
+              <div class="text-[11px] text-slate-400">km de red</div>
+            </div>
+            <div class="rounded-xl bg-ink-700 p-3">
+              <div id="kpiSeg" class="text-2xl font-bold text-white">—</div>
+              <div class="text-[11px] text-slate-400">tramos</div>
+            </div>
+            <div class="col-span-2 rounded-xl bg-ink-700 p-3">
+              <div class="flex items-baseline gap-2">
+                <div id="kpiPav" class="text-2xl font-bold text-emerald-400">—</div>
+                <div class="text-[11px] text-slate-400">% pavimentada</div>
+              </div>
+              <div id="kpiPavNote" class="mt-1 text-[11px] text-slate-500"></div>
+            </div>
+          </div>
+
+          <div class="rounded-xl bg-ink-700 p-3">
+            <h3 class="mb-2 text-[11px] font-medium text-slate-400">Km por tipo de vía</h3>
+            <canvas id="chartTipo" height="150"></canvas>
+          </div>
+          <div class="rounded-xl bg-ink-700 p-3">
+            <h3 class="mb-2 text-[11px] font-medium text-slate-400">Top territoriales por km</h3>
+            <canvas id="chartRegion" height="200"></canvas>
+          </div>
+          <div class="rounded-xl bg-ink-700 p-3">
+            <h3 class="mb-2 text-[11px] font-medium text-slate-400">Km por administrador</h3>
+            <canvas id="chartAdmin" height="160"></canvas>
+          </div>
+        </div>
+      </aside>
+
+    </div>
+  </div>
+
+  <script defer src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "sivu",
+  "version": "1.0.0",
+  "description": "Sistema de Informacion Vial Unificada - ingesta y visualizacion de la red vial de Colombia (INVIAS). Backend sin dependencias (node:http + fetch + node:sqlite), frontend HTML + Tailwind.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "ingest": "node --experimental-sqlite src/ingest.js",
+    "start": "node --experimental-sqlite src/server.js",
+    "dev": "node --experimental-sqlite --watch src/server.js"
+  }
+}

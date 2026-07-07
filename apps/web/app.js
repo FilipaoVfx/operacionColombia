@@ -15,8 +15,9 @@ const TABLE_COLS = {
   territorio: [["cod_mpio", "Código"], ["nom_mpio", "Municipio"], ["dpto", "Departamento"], ["tipo", "Tipo"]],
   vial: [["codigo_vial", "Código"], ["nombre_tramo", "Tramo"], ["territorial", "Territorial"], ["longitud_km", "km"]],
   economia: [["anio", "Año"], ["departamento", "Depto"], ["actividad", "Actividad"], ["valor_miles_millones", "Valor"]],
+  agro: [["cultivo", "Cultivo"], ["municipio", "Municipio"], ["produccion_t", "Producción (t)"], ["area_sembrada_ha", "Sembrada (ha)"]],
 };
-const DOM_LABEL = { territorio: "Territorio", vial: "Vial", economia: "Economía" };
+const DOM_LABEL = { territorio: "Territorio", vial: "Vial", economia: "Economía", agro: "Agro" };
 
 let map, layerMunis, layerVial, chart;
 
@@ -104,6 +105,8 @@ async function loadKpis() {
   $("kpiTramos").textContent = fmt(k.vial_tramos);
   $("kpiPib").textContent = k.pib_ultimo ? fmt(k.pib_ultimo.valor) : "—";
   $("kpiPibAnio").textContent = k.pib_ultimo ? `· ${k.pib_ultimo.anio}` : "";
+  $("kpiAgro").textContent = k.agro_produccion_t ? fmt(k.agro_produccion_t) : "—";
+  $("kpiAgroDetalle").textContent = k.agro_anio ? `${fmt(k.agro_area_ha)} ha sembradas · EVA ${k.agro_anio}` : "EVA · MinAgricultura";
   $("kpiTotal").textContent = fmt(k.registros_total);
   drawChart(k.pib_serie);
 }

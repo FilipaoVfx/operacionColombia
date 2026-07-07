@@ -56,6 +56,19 @@ export const VIEWS = [
     `,
   },
   {
+    name: "rm_agro_depto",
+    domain: "agro",
+    sql: `
+      SELECT divipola_depto cod_dpto,
+             json_extract(campos,'$.anio') anio,
+             COUNT(DISTINCT json_extract(campos,'$.cultivo')) cultivos,
+             ROUND(SUM(json_extract(campos,'$.produccion_t')), 1)      produccion_t,
+             ROUND(SUM(json_extract(campos,'$.area_sembrada_ha')), 1)  area_sembrada_ha
+      FROM registros WHERE dominio='agro'
+      GROUP BY divipola_depto, anio
+    `,
+  },
+  {
     name: "rm_vial_depto",
     domain: "vial",
     sql: `

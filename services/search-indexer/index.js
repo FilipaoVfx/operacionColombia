@@ -13,17 +13,22 @@ export function migrateSearch(db) {
       texto,
       tokenize = 'unicode61 remove_diacritics 2'
     );
-    -- control incremental: qué hash de cada registro está indexado
+    -- control incremental: qué hash de cada registro está indexado y en qué
+    -- rowid del FTS vive (borrar por rowid; id_interno es UNINDEXED = full scan)
     CREATE TABLE IF NOT EXISTS search_indexed (
       id_interno TEXT PRIMARY KEY,
-      hash       TEXT NOT NULL
+      hash       TEXT NOT NULL,
+      fts_rowid  INTEGER
     );
   `);
+  const cols = db.prepare("PRAGMA table_info(search_indexed)").all();
+  if (!cols.some((c) => c.name === "fts_rowid")) db.exec("ALTER TABLE search_indexed ADD COLUMN fts_rowid INTEGER");
 }
 
 // label humano del hit: primer campo "nombre" disponible por dominio
 function labelOf(campos, idInterno) {
   return campos.nom_mpio || campos.nombre_tramo
+    || (campos.cultivo ? [campos.cultivo, campos.municipio, campos.anio].filter(Boolean).join(" · ") : null)
     || [campos.actividad, campos.departamento, campos.anio].filter(Boolean).join(" · ")
     || idInterno;
 }
@@ -38,30 +43,34 @@ export function buildSearchIndex(db, domain = null) {
   const da = domain ? [domain] : [];
 
   const pendientes = db.prepare(`
-    SELECT r.id_interno, r.dominio, r.divipola_depto, r.campos, r.search_blob, r.hash
+    SELECT r.id_interno, r.dominio, r.divipola_depto, r.campos, r.search_blob, r.hash,
+           s.id_interno ya_indexado, s.fts_rowid
     FROM registros r LEFT JOIN search_indexed s ON s.id_interno = r.id_interno
     ${dw} ${dw ? "AND" : "WHERE"} (s.id_interno IS NULL OR s.hash <> r.hash)
   `).all(...da);
 
-  const delFts = db.prepare("DELETE FROM search_fts WHERE id_interno=?");
+  const delFtsRowid = db.prepare("DELETE FROM search_fts WHERE rowid=?");
+  const delFtsScan = db.prepare("DELETE FROM search_fts WHERE id_interno=?"); // solo legado sin fts_rowid
   const insFts = db.prepare("INSERT INTO search_fts (id_interno, dominio, depto, label, texto) VALUES (?,?,?,?,?)");
-  const markIdx = db.prepare("INSERT OR REPLACE INTO search_indexed (id_interno, hash) VALUES (?,?)");
+  const markIdx = db.prepare("INSERT OR REPLACE INTO search_indexed (id_interno, hash, fts_rowid) VALUES (?,?,?)");
 
   db.exec("BEGIN");
   try {
     for (const r of pendientes) {
       const campos = JSON.parse(r.campos || "{}");
-      delFts.run(r.id_interno);
-      insFts.run(r.id_interno, r.dominio, r.divipola_depto, labelOf(campos, r.id_interno), r.search_blob || "");
-      markIdx.run(r.id_interno, r.hash);
+      if (r.fts_rowid != null) delFtsRowid.run(r.fts_rowid);
+      else if (r.ya_indexado != null) delFtsScan.run(r.id_interno);
+      const ins = insFts.run(r.id_interno, r.dominio, r.divipola_depto, labelOf(campos, r.id_interno), r.search_blob || "");
+      markIdx.run(r.id_interno, r.hash, ins.lastInsertRowid);
     }
     // huérfanos: indexados cuyo registro ya no existe
     const huerfanos = db.prepare(`
-      SELECT s.id_interno FROM search_indexed s
+      SELECT s.id_interno, s.fts_rowid FROM search_indexed s
       LEFT JOIN registros r ON r.id_interno = s.id_interno WHERE r.id_interno IS NULL
     `).all();
     for (const h of huerfanos) {
-      delFts.run(h.id_interno);
+      if (h.fts_rowid != null) delFtsRowid.run(h.fts_rowid);
+      else delFtsScan.run(h.id_interno);
       db.prepare("DELETE FROM search_indexed WHERE id_interno=?").run(h.id_interno);
     }
     db.exec("COMMIT");

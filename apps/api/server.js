@@ -59,7 +59,8 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
   // -------------------------------------------------------------------------
   // filtros comunes: dominio, depto, muni, q → WHERE parametrizado
   // -------------------------------------------------------------------------
-  const DOMINIOS = new Set(["territorio", "economia", "vial"]);
+  // dominios existentes en el write store; un dominio nuevo entra al reiniciar tras su ingesta
+  const DOMINIOS = new Set(db.prepare("SELECT DISTINCT dominio FROM registros").all().map((r) => r.dominio));
 
   function buildWhere(qp) {
     const where = [];
@@ -121,6 +122,10 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     const vial = prep(
       `SELECT COALESCE(SUM(tramos),0) tramos, ROUND(COALESCE(SUM(km_total),0),1) km FROM rm_vial_depto ${dw}`
     ).get(...da);
+    const agro = prep(
+      `SELECT COALESCE(SUM(produccion_t),0) produccion_t, COALESCE(SUM(area_sembrada_ha),0) area_ha, MAX(anio) anio
+       FROM rm_agro_depto ${dw}`
+    ).get(...da);
     const pibSerie = prep(`
       SELECT anio, ROUND(SUM(pib_miles_millones),1) valor FROM rm_pib_depto_anio
       WHERE tipo_precios LIKE 'PIB a precios corrientes%' ${depto ? "AND cod_dpto=?" : ""}
@@ -135,6 +140,9 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       municipios,
       vial_tramos: vial.tramos,
       vial_km: vial.km ?? 0,
+      agro_produccion_t: Math.round(agro.produccion_t),
+      agro_area_ha: Math.round(agro.area_ha),
+      agro_anio: agro.anio ?? null,
       pib_ultimo: pibSerie.at(-1) ?? null,
       pib_serie: pibSerie,
       registros_total: registrosTotal,

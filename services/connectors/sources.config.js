@@ -67,6 +67,40 @@ export const SOURCES = [
     },
   },
   {
+    id: "2pnw-mmge",
+    kind: "socrata",
+    domain: "agro",
+    nombre: "MinAgricultura — EVA Evaluaciones Agropecuarias Municipales",
+    endpoint: "https://www.datos.gov.co/resource/2pnw-mmge.json",
+    licencia: "CC BY-SA 4.0 (datos.gov.co)",
+    priority: "P1",
+    schedule: "anual",
+    // catálogo (§EVA): solo el corte más reciente del dataset (hoy 2018; la fuente dejó de actualizarse)
+    where: "a_o='2018'",
+    mapRow(row) {
+      const num = (s) => { const n = Number(s); return Number.isFinite(n) ? n : null; };
+      return {
+        idFuente: row[":id"],
+        campos: {
+          anio: Number(row.a_o) || row.a_o,
+          periodo: row.periodo ?? null,
+          municipio: row.municipio,
+          departamento: row.departamento,
+          grupo_cultivo: row.grupo_de_cultivo ?? null,
+          cultivo: row.cultivo,
+          ciclo: row.ciclo_de_cultivo ?? null,
+          area_sembrada_ha: num(row.rea_sembrada_ha),
+          area_cosechada_ha: num(row.rea_cosechada_ha),
+          produccion_t: num(row.producci_n_t),
+          rendimiento_t_ha: num(row.rendimiento_t_ha),
+        },
+        extra: row,
+        divipola: { codigo: row.c_d_mun, nombre: row.municipio, depto: row.departamento },
+        searchBlob: `${row.cultivo} ${row.grupo_de_cultivo ?? ""} ${row.municipio} ${row.departamento} ${row.a_o}`,
+      };
+    },
+  },
+  {
     id: "invias-red-vial",
     kind: "arcgis",
     domain: "vial",

@@ -376,11 +376,11 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M3, M4 (+ M5 fan-out).  **Habilita:** M10, M13.
 - **Entregables:** `/services/search-indexer` + índice de búsqueda.
 - **Tareas:**
-  - [ ] Resolver **ADR-005/006** (engine + vector store).
-  - [ ] Índice full-text (FTS5 al inicio) sobre `search_blob` unificado.
-  - [ ] Índice vectorial (embeddings) para búsqueda semántica.
-  - [ ] Búsqueda **híbrida** (fusión lexical + semántica) + **facetas** (dominio, depto, tipo) + **autocompletado**.
-  - [ ] Indexado incremental vía fan-out (M5): nuevo registro indexado < 30 s.
+  - [x] Resolver **ADR-005/006** (engine + vector store): ADR-005 aceptado (FTS5); ADR-006 diferido a M13.
+  - [x] Índice full-text (FTS5 al inicio) sobre `search_blob` unificado.
+  - [ ] Índice vectorial (embeddings) para búsqueda semántica — diferido a M13 (ADR-006).
+  - [x] **Facetas** (dominio, depto) + **autocompletado**; búsqueda **híbrida** diferida a M13 junto con el índice vectorial.
+  - [x] Indexado incremental vía fan-out (M5): nuevo registro indexado < 30 s.
 - **Contrato expuesto:** `SearchIndex.query()`, `SearchIndex.upsert()`.
 - **Aceptación:** full-text < 100 ms; autocompletar fluido; facetas correctas; indexación < 30 s.
 - **Pruebas:** consultas frecuentes ("Cali"), relevancia híbrida, latencia bajo carga.
@@ -408,11 +408,11 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M4, M8 (+ M7 para search endpoints).  **Habilita:** M10, M15.
 - **Entregables:** `/apps/api` (extiende `server.js`) + query router + capa de caché.
 - **Tareas:**
-  - [ ] Endpoints por dominio (map/tabla/kpi/search/by-id) — reusar `buildWhere`/prepared del piloto.
-  - [ ] Paginación por **cursor** (no offset profundo), `LIMIT` siempre.
-  - [ ] Query router: dirige a read model / search / graph según endpoint.
-  - [ ] Caché de API + headers (`Cache-Control`, `ETag`) + colapso de peticiones idénticas.
-  - [ ] Respuestas GeoJSON/CSV/JSON; gzip (ya en piloto).
+  - [x] Endpoints por dominio (map/tabla/kpi/search/by-id) — reusar `buildWhere`/prepared del piloto.
+  - [x] Paginación por **cursor** (no offset profundo), `LIMIT` siempre.
+  - [x] Query router: dirige a read model / search según endpoint (graph pendiente de M12).
+  - [x] Caché de API + headers (`Cache-Control`, `ETag`) + colapso de peticiones idénticas.
+  - [x] Respuestas GeoJSON/CSV/JSON; gzip (ya en piloto).
 - **Contrato expuesto:** OpenAPI del Read API.
 - **Aceptación:** P95 < 150 ms, P99 < 300 ms, by-id < 20 ms; nunca pega a write store; nunca `SELECT *`.
 - **Pruebas:** carga 500 req/s; verificar cache hit; latencias vs budget.
@@ -425,11 +425,11 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M9.  **Habilita:** entrega de valor al usuario final.
 - **Entregables:** `/apps/web` (evoluciona `public/`).
 - **Tareas:**
-  - [ ] Reusar mapa/tabla/KPI/búsqueda/export del piloto; generalizar por dominio (capas conmutables).
-  - [ ] Selector de territorio DIVIPOLA global; filtros combinables por dominio.
-  - [ ] Popups con **enlace a la fuente oficial** (trazabilidad visible) + disclaimer en conflicto.
-  - [ ] Vistas por dominio alimentadas por read models (M8) y search (M7).
-  - [ ] Carga por bbox + paginación; spinner solo si > 500 ms.
+  - [x] Reusar mapa/tabla/KPI/búsqueda/export del piloto; generalizar por dominio (capas conmutables).
+  - [x] Selector de territorio DIVIPOLA global; filtros combinables por dominio.
+  - [x] Popups con **enlace a la fuente oficial** (trazabilidad visible); disclaimer en conflicto pendiente de ingerir ese dominio.
+  - [x] Vistas por dominio alimentadas por read models (M8) y search (M7).
+  - [ ] Carga por bbox + paginación; spinner solo si > 500 ms — paginación lista, bbox pendiente.
 - **Contrato expuesto:** consume Read API (M9).
 - **Aceptación:** carga inicial < 1.5 s (OKR); bundle < 500 KB; responsive; cada dato enlaza su fuente.
 - **Pruebas:** e2e por dominio; Lighthouse; móvil.
@@ -502,9 +502,9 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Objetivo:** caché en capas edge/CDN → API → search → DB (ard 7).
 - **Depende de:** M9.  **Habilita:** cumplir budget bajo carga.
 - **Tareas:**
-  - [ ] Cache edge/CDN (según ADR-001) con inmutabilidad + `ETag`.
-  - [ ] Cache de API y de search; colapso de peticiones idénticas (single-flight).
-  - [ ] Invalidación por versión de dataset/vista (M2/M8).
+  - [ ] Cache edge/CDN (según ADR-001) con inmutabilidad + `ETag` — pendiente de despliegue edge (ADR-001).
+  - [x] Cache de API y de search; colapso de peticiones idénticas (single-flight).
+  - [x] Invalidación por versión de dataset/vista (M2/M8): caché y ETag clavados a la versión de datos, no TTL ciego.
 - **Aceptación:** cache hit edge > 95 %; "1000 buscan Cali → 1 consulta a la base".
 - **Riesgos:** invalidación incorrecta → clavar en versión inmutable, no en TTL ciego.
 

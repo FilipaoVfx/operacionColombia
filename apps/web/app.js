@@ -167,7 +167,8 @@ function initSearch() {
     const q = input.value.trim();
     if (q.length < 2) { list.classList.add("hidden"); return; }
     searchTimer = setTimeout(async () => {
-      const hits = await api(`/api/search?q=${encodeURIComponent(q)}${state.depto ? `&depto=${state.depto}` : ""}`);
+      const res = await api(`/api/search?q=${encodeURIComponent(q)}${state.depto ? `&depto=${state.depto}` : ""}`);
+      const hits = res.hits ?? res;
       list.innerHTML = hits.map((h) =>
         `<li><button data-id="${h.id_interno}" data-geom="${h.con_geom}" class="w-full px-3 py-2 text-left text-sm hover:bg-ink-700">
           <span class="text-slate-500 text-[10px] uppercase mr-1.5">${DOM_LABEL[h.dominio] ?? h.dominio}</span>${h.label}</button></li>`

@@ -4,6 +4,7 @@ import { getSource } from "../connectors/sources.config.js";
 import { runSource } from "../connectors/cli.js";
 import { resolveDomain } from "../entity-res/index.js";
 import { buildViews } from "../views-builder/index.js";
+import { buildSearchIndex } from "../search-indexer/index.js";
 
 /** Handlers por tipo de job. Todos idempotentes: reejecutar no duplica estado. */
 export function createHandlers(db) {
@@ -11,10 +12,11 @@ export function createHandlers(db) {
     async ingest(payload, { queue }) {
       const source = getSource(payload.sourceId);
       const res = await runSource(db, source, { force: Boolean(payload.force) });
-      // fan-out: storage listo → vistas y entidades como jobs independientes
+      // fan-out: storage listo → vistas, entidades y search como jobs independientes
       if (res.resultado === "ok" && (res.insertadas || res.actualizadas)) {
         queue.enqueue({ tipo: "views", payload: { domain: source.domain }, dedupeKey: `views:${source.domain}` });
         queue.enqueue({ tipo: "entity-res", payload: { domain: source.domain }, dedupeKey: `entity-res:${source.domain}` });
+        queue.enqueue({ tipo: "search", payload: { domain: source.domain }, dedupeKey: `search:${source.domain}` });
       }
       return res;
     },
@@ -23,6 +25,9 @@ export function createHandlers(db) {
     },
     async views(payload) {
       return buildViews(db, { domain: payload?.domain ?? null });
+    },
+    async search(payload) {
+      return buildSearchIndex(db, payload?.domain ?? null);
     },
   };
 }

@@ -1,6 +1,10 @@
 // Registro de fuentes (PLANNING M1). Añadir un dominio nuevo = añadir una entrada aquí.
 // mapRow(row, ctx) devuelve lo que buildRecord necesita; ctx.resolver es DivipolaResolver (M3).
 import { validateSourceConfig } from "../../packages/contracts/index.js";
+import { TERRITORIAL, DEPARTAMENTOS } from "../../src/domains.js";
+
+// territoriales INVIAS cuyo nombre difiere del oficial DIVIPOLA
+const TERRITORIAL_ALIAS = { GUAJIRA: "LA GUAJIRA" };
 
 export const SOURCES = [
   {
@@ -71,8 +75,15 @@ export const SOURCES = [
     licencia: "Datos abiertos INVIAS",
     priority: "P0",
     schedule: "mensual",
-    mapRow(feature) {
+    mapRow(feature, ctx) {
       const p = feature.properties || {};
+      // territorial INVIAS ≈ departamento; las administrativas (ANI, Planta Central…) no resuelven
+      const territorial = TERRITORIAL[p.territorial] ?? null;
+      const deptoName = territorial && DEPARTAMENTOS.has(territorial)
+        ? (TERRITORIAL_ALIAS[territorial.toUpperCase()] ?? territorial)
+        : null;
+      const codDepto = deptoName ? ctx.resolver?.resolveDepto({ nombre: deptoName }) : null;
+      const stLen = Number(p["st_length(shape)"]);
       return {
         idFuente: p.globalid || p.objectid,
         campos: {
@@ -80,14 +91,15 @@ export const SOURCES = [
           nombre_tramo: p.nombretramo || p.nombreruta || p.sector || "Sin nombre",
           ruta: p.nombreruta ?? null,
           sector: p.sector ?? null,
+          territorial,
+          longitud_km: Number.isFinite(stLen) && stLen > 0 ? Math.round(stLen) / 1000 : null,
           categoria_code: p.categoria ?? null,
           superficie_code: p.superficie ?? null,
-          territorial_code: p.territorial ?? null,
-          st_length_m: p["st_length(shape)"] ?? null,
         },
         extra: p,
         geom: feature.geometry ?? null,
-        searchBlob: `${p.codigotramo ?? ""} ${p.nombretramo ?? ""} ${p.nombreruta ?? ""} ${p.sector ?? ""}`,
+        deptoCode: codDepto,
+        searchBlob: `${p.codigotramo ?? ""} ${p.nombretramo ?? ""} ${p.nombreruta ?? ""} ${p.sector ?? ""} ${territorial ?? ""}`,
       };
     },
   },

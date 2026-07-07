@@ -339,13 +339,13 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M1, M4.  **Habilita:** ingesta masiva de todo el catálogo.
 - **Entregables:** `/services/orchestrator` (scheduler + workers + cola).
 - **Tareas:**
-  - [ ] Resolver **ADR-004** (tabla-cola vs broker).
-  - [ ] Scheduler por periodicidad de fuente (SECOP diario, EVA semestral, PIB anual) — M2 freshness.
-  - [ ] Cola de trabajos: `enqueue(job)`, workers idempotentes, reintentos con backoff, dead-letter.
-  - [ ] **Streaming** en `FileConnector`: parse por chunks (Excel/CSV grandes) → normalize → insert → next chunk.
+  - [x] Resolver **ADR-004** (tabla-cola vs broker).
+  - [x] Scheduler por periodicidad de fuente (SECOP diario, EVA semestral, PIB anual) — M2 freshness.
+  - [x] Cola de trabajos: `enqueue(job)`, workers idempotentes, reintentos con backoff, dead-letter.
+  - [x] **Streaming** en `FileConnector`: parse por chunks (Excel/CSV grandes) → normalize → insert → next chunk.
   - [ ] **Fan-out** tras normalizar: storage → search → embeddings → graph (en paralelo, no secuencial).
   - [ ] Separación física de cargas: ETL/scrapers/API/embeddings como procesos independientes.
-  - [ ] Detección de cambios antes de encolar (skip si `hash/etag` igual).
+  - [x] Detección de cambios antes de encolar (skip si `hash/etag` igual).
 - **Contrato expuesto:** `Job` (§6.5), `Queue`, `Scheduler`.
 - **Aceptación:** correr N fuentes concurrentes sin degradar API; reintento y dead-letter funcionan;
   archivo de 2 GB procesado sin OOM (streaming). Budget: indexación < 30 s desde ingesta.
@@ -360,10 +360,10 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M3, M4.  **Habilita:** M12, análisis cruzados.
 - **Entregables:** `/services/entity-res` + catálogo de entidades con IDs internos estables.
 - **Tareas:**
-  - [ ] Definir entidades canónicas + IDs internos estables + relaciones a datasets.
-  - [ ] Matching por **NIT** (entidades/proveedores), por **código** (vial, DIVIPOLA), por **nombre normalizado**.
+  - [x] Definir entidades canónicas + IDs internos estables + relaciones a datasets.
+  - [x] Matching por **NIT** (entidades/proveedores), por **código** (vial, DIVIPOLA), por **nombre normalizado**.
   - [ ] Alias y reglas de deduplicación (dedupe SECOP I/II/Integrado — bloqueante #8).
-  - [ ] Cola de revisión para matches dudosos (umbral de confianza).
+  - [x] Cola de revisión para matches dudosos (umbral de confianza).
 - **Contrato expuesto:** `Entity`, `EntityRef`, `ResolveResult`.
 - **Aceptación:** proveedor con múltiples grafías se resuelve a 1 entidad; contratos no se triplican.
 - **Pruebas:** set de NITs con ruido; nombres con variaciones; medir precisión/recall.
@@ -393,9 +393,9 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M4.  **Habilita:** M9, M10.
 - **Entregables:** `/services/views-builder` + read models (top contratistas, km por depto, producción por municipio…).
 - **Tareas:**
-  - [ ] Catálogo de vistas por dominio (KPIs del README §7/§10 + casos de uso del catálogo).
-  - [ ] Builder incremental: recalcular solo lo afectado por la última ingesta (via fan-out M5).
-  - [ ] Versionar vistas (inmutabilidad para cacheo).
+  - [x] Catálogo de vistas por dominio (KPIs del README §7/§10 + casos de uso del catálogo).
+  - [x] Builder incremental: recalcular solo lo afectado por la última ingesta (via fan-out M5).
+  - [x] Versionar vistas (inmutabilidad para cacheo).
 - **Contrato expuesto:** `ReadModel` (tabla/consulta precalculada).
 - **Aceptación:** carga dashboard < 1 s; KPI leído con `SELECT` directo, sin agregación en caliente.
 - **Pruebas:** comparar KPI precalculado vs cálculo directo (correctitud) sobre dataset grande.

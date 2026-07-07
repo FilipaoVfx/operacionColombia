@@ -7,6 +7,7 @@
 import { SOURCES, getSource } from "./sources.config.js";
 import * as socrata from "./socrata.js";
 import * as arcgis from "./arcgis.js";
+import * as file from "./file.js";
 import { assertConnector } from "../../packages/contracts/index.js";
 import { openOsintDb, MetadataRegistry, WriteStore } from "../../packages/metadata/registry.js";
 import { buildRecord } from "../../packages/core-model/index.js";
@@ -15,6 +16,7 @@ import { loadDivipola, DivipolaResolver } from "../../packages/divipola/index.js
 const CONNECTORS = {
   socrata: assertConnector(socrata, "socrata"),
   arcgis: assertConnector(arcgis, "arcgis"),
+  file: assertConnector(file, "file"),
 };
 
 export async function runSource(db, source, { force = false } = {}) {

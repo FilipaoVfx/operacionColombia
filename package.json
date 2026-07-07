@@ -13,6 +13,10 @@
     "dev": "node --experimental-sqlite --watch src/server.js",
     "test": "node --test \"test/**/*.test.js\"",
     "connectors": "node services/connectors/cli.js",
-    "etl": "node services/connectors/cli.js run --all"
+    "etl": "node services/connectors/cli.js run --all",
+    "orchestrator": "node services/orchestrator/cli.js",
+    "tick": "node services/orchestrator/cli.js tick",
+    "entities": "node services/entity-res/cli.js",
+    "views": "node services/views-builder/cli.js"
   }
 }

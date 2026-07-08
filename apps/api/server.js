@@ -14,6 +14,7 @@ import { openOsintDb } from "../../packages/metadata/registry.js";
 import { normName } from "../../packages/core-model/index.js";
 import { migrateViews, buildViews } from "../../services/views-builder/index.js";
 import { migrateSearch, searchQuery } from "../../services/search-indexer/index.js";
+import { migrateGeo, buildGeoIndex } from "../../services/geo-indexer/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = join(__dirname, "..", "web");
@@ -21,6 +22,8 @@ const WEB_DIR = join(__dirname, "..", "web");
 export function createApp(db, { webDir = WEB_DIR } = {}) {
   migrateViews(db);
   migrateSearch(db);
+  migrateGeo(db);
+  buildGeoIndex(db); // incremental: solo geoms nuevos/cambiados desde el último build
   // read models faltantes (DB nueva) se construyen una vez al arrancar
   if (!db.prepare("SELECT COUNT(*) c FROM read_models").get().c) {
     try { buildViews(db); } catch { /* sin registros aún: vistas vacías luego */ }
@@ -74,6 +77,17 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     const q = qp.get("q");
     if (q && q.trim()) { where.push("search_blob LIKE ?"); args.push(`%${normName(q).toLowerCase()}%`); }
     return { clause: where.length ? "WHERE " + where.join(" AND ") : "", args, filtros: { dominio, depto, muni } };
+  }
+
+  // bbox=minLon,minLat,maxLon,maxLat → [n,n,n,n] validado, o null (se ignora)
+  function parseBbox(raw) {
+    if (!raw) return null;
+    const b = raw.split(",").map(Number);
+    if (b.length !== 4 || b.some((n) => !Number.isFinite(n))) return null;
+    const [minLon, minLat, maxLon, maxLat] = b;
+    if (minLon >= maxLon || minLat >= maxLat) return null;
+    if (minLon < -180 || maxLon > 180 || minLat < -90 || maxLat > 90) return null;
+    return b;
   }
 
   function parseRow(r, { withGeom = false } = {}) {
@@ -158,11 +172,22 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     const total = prep(`SELECT COUNT(*) c FROM registros ${clause}`).get(...args).c;
 
     if (format === "geojson") {
-      const geoClause = clause ? `${clause} AND geom IS NOT NULL` : "WHERE geom IS NOT NULL";
+      let geoClause = clause ? `${clause} AND geom IS NOT NULL` : "WHERE geom IS NOT NULL";
+      let geoArgs = args;
+      // carga por bbox (M10): intersección contra bbox precalculado (geo-indexer),
+      // nunca parseando GeoJSON en caliente
+      const bbox = parseBbox(qp.get("bbox"));
+      if (bbox) {
+        geoClause += ` AND id_interno IN (
+          SELECT id_interno FROM geo_bbox
+          WHERE min_lon <= ? AND max_lon >= ? AND min_lat <= ? AND max_lat >= ?
+        )`;
+        geoArgs = [...args, bbox[2], bbox[0], bbox[3], bbox[1]];
+      }
       const rows = prep(`
         SELECT id_interno, dominio, fuente, fuente_url, divipola_muni, divipola_depto, fecha_ingesta, campos, geom
         FROM registros ${geoClause} LIMIT ?
-      `).all(...args, limit);
+      `).all(...geoArgs, limit);
       const features = rows.map((r) => {
         const p = parseRow(r, { withGeom: true });
         const geom = p.geom; delete p.geom;

@@ -5,6 +5,7 @@ import { runSource } from "../connectors/cli.js";
 import { resolveDomain } from "../entity-res/index.js";
 import { buildViews } from "../views-builder/index.js";
 import { buildSearchIndex } from "../search-indexer/index.js";
+import { buildGeoIndex } from "../geo-indexer/index.js";
 
 /** Handlers por tipo de job. Todos idempotentes: reejecutar no duplica estado. */
 export function createHandlers(db) {
@@ -17,6 +18,7 @@ export function createHandlers(db) {
         queue.enqueue({ tipo: "views", payload: { domain: source.domain }, dedupeKey: `views:${source.domain}` });
         queue.enqueue({ tipo: "entity-res", payload: { domain: source.domain }, dedupeKey: `entity-res:${source.domain}` });
         queue.enqueue({ tipo: "search", payload: { domain: source.domain }, dedupeKey: `search:${source.domain}` });
+        queue.enqueue({ tipo: "geo", payload: { domain: source.domain }, dedupeKey: `geo:${source.domain}` });
       }
       return res;
     },
@@ -28,6 +30,9 @@ export function createHandlers(db) {
     },
     async search(payload) {
       return buildSearchIndex(db, payload?.domain ?? null);
+    },
+    async geo(payload) {
+      return buildGeoIndex(db, payload?.domain ?? null);
     },
   };
 }

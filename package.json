@@ -17,6 +17,7 @@
     "orchestrator": "node services/orchestrator/cli.js",
     "tick": "node services/orchestrator/cli.js tick",
     "entities": "node services/entity-res/cli.js",
-    "views": "node services/views-builder/cli.js"
+    "views": "node services/views-builder/cli.js",
+    "geo": "node services/geo-indexer/cli.js"
   }
 }

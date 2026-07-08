@@ -42,6 +42,27 @@ function initMap() {
     '<span style="color:#c98500">●</span> Municipios (DANE)': layerMunis,
     '<span style="color:#3987e5">━</span> Red vial (INVIAS)': layerVial,
   }, { collapsed: false, position: "topright" }).addTo(map);
+
+  // carga por bbox: pan/zoom del usuario recarga solo el viewport visible.
+  // Los movimientos programáticos (fitBounds tras cambiar depto) no recargan:
+  // esa carga ya trajo el depto completo.
+  let moveTimer;
+  map.on("moveend", () => {
+    if (programmaticMove) { programmaticMove = false; return; }
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => loadMapLayers({ bboxOnly: true }), 250);
+  });
+}
+
+// spinner sobre el mapa: solo aparece si la carga supera 500 ms (budget M10)
+let spinnerTimer;
+function spinnerOn() {
+  clearTimeout(spinnerTimer);
+  spinnerTimer = setTimeout(() => $("mapSpinner").classList.replace("hidden", "grid"), 500);
+}
+function spinnerOff() {
+  clearTimeout(spinnerTimer);
+  $("mapSpinner").classList.replace("grid", "hidden");
 }
 
 function popupHtml(p) {
@@ -59,12 +80,28 @@ function popupHtml(p) {
     </div></div>`;
 }
 
-async function loadMapLayers() {
+let programmaticMove = false;
+let mapReq = 0; // descarta respuestas obsoletas si el usuario sigue moviendo el mapa
+
+/**
+ * bboxOnly=true (pan/zoom): pide solo el viewport actual y no reencuadra.
+ * bboxOnly=false (arranque / cambio de depto): pide el filtro completo y reencuadra.
+ */
+async function loadMapLayers({ bboxOnly = false } = {}) {
+  const req = ++mapReq;
   const d = state.depto ? `&depto=${state.depto}` : "";
-  const [munis, vial] = await Promise.all([
-    api(`/api/registros?dominio=territorio&format=geojson&limit=2000${d}`),
-    api(`/api/registros?dominio=vial&format=geojson&limit=2000${d}`),
-  ]);
+  const bb = bboxOnly ? `&bbox=${map.getBounds().toBBoxString()}` : "";
+  spinnerOn();
+  let munis, vial;
+  try {
+    [munis, vial] = await Promise.all([
+      api(`/api/registros?dominio=territorio&format=geojson&limit=2000${d}${bb}`),
+      api(`/api/registros?dominio=vial&format=geojson&limit=2000${d}${bb}`),
+    ]);
+  } finally {
+    if (req === mapReq) spinnerOff();
+  }
+  if (req !== mapReq) return;
   layerMunis.clearLayers();
   layerVial.clearLayers();
 
@@ -80,8 +117,12 @@ async function loadMapLayers() {
     L.geoJSON(f, { style: { color: COLOR_VIAL, weight: 2, opacity: 0.85 } })
       .bindPopup(() => popupHtml(f.properties)).addTo(layerVial);
   }
+  if (bboxOnly) return;
+  programmaticMove = true;
   if (state.depto && bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
-  else if (!state.depto) map.setView([4.6, -73.1], 6);
+  else map.setView([4.6, -73.1], 6);
+  // si la vista no cambió, moveend nunca dispara y el flag quedaría colgado
+  setTimeout(() => { programmaticMove = false; }, 400);
 }
 
 // linaje en popup (delegado)

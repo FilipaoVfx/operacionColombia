@@ -429,7 +429,7 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
   - [x] Selector de territorio DIVIPOLA global; filtros combinables por dominio.
   - [x] Popups con **enlace a la fuente oficial** (trazabilidad visible); disclaimer en conflicto pendiente de ingerir ese dominio.
   - [x] Vistas por dominio alimentadas por read models (M8) y search (M7).
-  - [ ] Carga por bbox + paginación; spinner solo si > 500 ms — paginación lista, bbox pendiente.
+  - [x] Carga por bbox + paginación; spinner solo si > 500 ms — bbox vía `services/geo-indexer` (bbox precalculado por registro, incremental por hash, fan-out M5) + `&bbox=` en Read API + recarga por `moveend` en el panel.
 - **Contrato expuesto:** consume Read API (M9).
 - **Aceptación:** carga inicial < 1.5 s (OKR); bundle < 500 KB; responsive; cada dato enlaza su fuente.
 - **Pruebas:** e2e por dominio; Lighthouse; móvil.
@@ -625,7 +625,7 @@ interface Job {
 | M8 Materialized Views | 2 | M4 | PENDIENTE |
 | M9 Read API + Cache | 3 | M4, M8 | PENDIENTE |
 | M7 Search (FTS+vector+híbrido) | 3 | M3, M4 | PENDIENTE |
-| M10 Frontend unificado | 3 | M9 | PENDIENTE |
+| M10 Frontend unificado | 3 | M9 | HECHO (2026-07-08: panel + carga por bbox/spinner; pendiente validar budget: carga < 1.5 s, Lighthouse) |
 | M15 Caching | 3 | M9 | PENDIENTE |
 | M11 Socrata Explorer | 4 | M1, M2 | PENDIENTE |
 | M12 Knowledge Graph | 4 | M6 | PENDIENTE |

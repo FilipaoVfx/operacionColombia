@@ -105,6 +105,10 @@
     <main class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-3">
       <div class="relative lg:col-span-2 min-h-[40vh]">
         <div id="map" class="absolute inset-0"></div>
+        <!-- spinner de carga del mapa: app.js lo muestra solo si la carga tarda > 500 ms -->
+        <div id="mapSpinner" class="pointer-events-none absolute inset-0 z-[1000] hidden place-items-center bg-ink-900/40">
+          <div class="h-9 w-9 animate-spin rounded-full border-[3px] border-ink-600 border-t-serie-vial" role="status" aria-label="Cargando mapa"></div>
+        </div>
       </div>
 
       <aside class="flex min-h-0 flex-col border-l border-ink-700 bg-ink-800/40">

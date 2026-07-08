@@ -368,7 +368,9 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const db = openOsintDb();
   const PORT = process.env.PORT || 8081;
-  http.createServer(createApp(db)).listen(PORT, () => {
-    console.log(`Operación Colombia — panel OSINT -> http://localhost:${PORT}`);
+  const HOST = process.env.HOST || "0.0.0.0";
+  http.createServer(createApp(db)).listen(PORT, HOST, () => {
+    const url = HOST === "0.0.0.0" ? `http://localhost:${PORT}` : `http://${HOST}:${PORT}`;
+    console.log(`Operación Colombia — panel OSINT -> ${url} (escuchando en ${HOST}:${PORT})`);
   });
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Operación Colombia · Panel OSINT de Recursos Públicos</title>
+  <title>Operación Colombia · Plataforma OSINT</title>
 
   <!-- Tailwind (CDN, sin build) -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -12,9 +12,10 @@
       theme: {
         extend: {
           colors: {
-            ink: { 900: "#0b1120", 800: "#0f172a", 700: "#1e293b", 600: "#334155" },
-            serie: { vial: "#3987e5", muni: "#c98500" },
+            ink: { 950: "#070b14", 900: "#0b1120", 850: "#0d1526", 800: "#0f172a", 700: "#1e293b", 600: "#334155" },
+            serie: { a: "#3987e5", b: "#c98500" },
           },
+          fontSize: { "2xs": ["10.5px", "14px"] },
         },
       },
     };
@@ -25,126 +26,101 @@
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <!-- Chart.js -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <script defer src="app.js"></script>
+  <script type="module" src="app.js"></script>
 
   <style>
     html, body { height: 100%; }
-    #map { background: #0b1120; }
+    * { scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+
+    #map { background: #070b14; }
     .leaflet-container { font-family: inherit; }
-    .leaflet-popup-content-wrapper { background:#0f172a; color:#e2e8f0; border-radius:10px; }
+    .leaflet-popup-content-wrapper { background:#0f172a; color:#e2e8f0; border-radius:10px; border:1px solid #1e293b; }
     .leaflet-popup-tip { background:#0f172a; }
     .leaflet-popup-content { margin:12px 14px; font-size:13px; }
     .leaflet-bar a { background:#1e293b; color:#e2e8f0; border-color:#334155; }
     .leaflet-bar a:hover { background:#334155; }
-    .leaflet-control-layers { background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:10px; }
-    .scroll-thin::-webkit-scrollbar { width:8px; height:8px; }
-    .scroll-thin::-webkit-scrollbar-thumb { background:#334155; border-radius:8px; }
-    .scroll-thin::-webkit-scrollbar-track { background:transparent; }
+    .leaflet-control-layers { background:#0f172aee; color:#e2e8f0; border:1px solid #334155; border-radius:10px; }
+
+    /* glass ligero para overlays */
+    .glass { background: rgba(11,17,32,.82); backdrop-filter: blur(8px); }
+
+    /* sidebar colapsado: solo iconos */
+    #sidebar.collapsed { width: 52px; }
+    #sidebar.collapsed .nav-label, #sidebar.collapsed .nav-section, #sidebar.collapsed #brandText { display: none; }
+
+    /* skeleton loader */
+    @keyframes pulse { 50% { opacity: .35; } }
+    .skel { animation: pulse 1.6s ease-in-out infinite; background: #1e293b; border-radius: 6px; }
+
+    /* transiciones cortas (budget 150ms) */
+    .nav-item, button, a { transition: background-color .12s ease, color .12s ease, border-color .12s ease; }
+    #inspector { transition: transform .14s ease; }
   </style>
 </head>
 
-<body class="h-full bg-ink-900 text-slate-200 antialiased overflow-hidden">
-  <div class="flex h-full flex-col">
+<body class="h-full overflow-hidden bg-ink-950 font-sans text-slate-200 antialiased">
+  <div class="flex h-full">
 
-    <!-- ===== Header ===== -->
-    <header class="flex flex-wrap items-center gap-3 border-b border-ink-700 bg-ink-800 px-4 py-2.5 shrink-0">
-      <div class="flex items-center gap-2.5">
-        <div class="grid h-9 w-9 place-items-center rounded-lg bg-serie-vial font-bold text-white">OC</div>
-        <div>
-          <h1 class="text-sm font-semibold leading-tight text-white">Operación Colombia · Panel OSINT</h1>
-          <p id="sourceLine" class="text-[11px] leading-tight text-slate-400">Recursos públicos · fuentes oficiales con linaje</p>
+    <!-- ===== Sidebar ===== -->
+    <aside id="sidebar" class="flex w-56 shrink-0 flex-col border-r border-ink-700/70 bg-ink-900 transition-[width] duration-150">
+      <div class="flex h-12 shrink-0 items-center gap-2 border-b border-ink-700/70 px-3">
+        <div class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-serie-a text-xs font-bold text-white">OC</div>
+        <div id="brandText" class="min-w-0">
+          <p class="truncate text-[13px] font-semibold leading-tight text-white">Operación Colombia</p>
+          <p class="truncate text-2xs leading-tight text-slate-500">Plataforma OSINT</p>
         </div>
+        <button id="sidebarToggle" title="Colapsar panel" class="ml-auto rounded-md p-1 text-slate-500 hover:bg-ink-700 hover:text-slate-200"></button>
       </div>
+      <nav id="nav" class="min-h-0 flex-1 overflow-y-auto px-2 py-2 text-[13px]"></nav>
+      <div id="sysStatus" class="shrink-0 border-t border-ink-700/70 px-3 py-2 text-2xs text-slate-500"></div>
+    </aside>
 
-      <!-- Selector único de territorio (DIVIPOLA) — filtra TODO el panel -->
-      <label class="ml-2 flex items-center gap-2 text-xs text-slate-400">
-        Territorio
-        <select id="deptoSel" class="rounded-lg border border-ink-600 bg-ink-700 px-2.5 py-1.5 text-sm text-slate-100 outline-none focus:border-serie-vial">
-          <option value="">Colombia (todos)</option>
-        </select>
-      </label>
+    <!-- ===== Columna principal ===== -->
+    <div class="flex min-w-0 flex-1 flex-col">
 
-      <!-- Búsqueda global cross-dominio -->
-      <div class="relative ml-auto w-full max-w-sm">
-        <input id="search" type="text" autocomplete="off" placeholder="Buscar municipio, vía, actividad…"
-               class="w-full rounded-lg border border-ink-600 bg-ink-700 px-3 py-1.5 text-sm placeholder-slate-500 outline-none focus:border-serie-vial" />
-        <ul id="searchResults" class="absolute z-[1200] mt-1 hidden max-h-72 w-full overflow-auto scroll-thin rounded-lg border border-ink-600 bg-ink-800 shadow-xl"></ul>
-      </div>
-    </header>
+      <!-- Topbar -->
+      <header class="flex h-12 shrink-0 items-center gap-3 border-b border-ink-700/70 bg-ink-900/80 px-4">
+        <ol id="breadcrumb" class="flex min-w-0 items-center gap-1.5 text-[13px] text-slate-400"></ol>
 
-    <!-- ===== KPIs ===== -->
-    <section id="kpis" class="grid shrink-0 grid-cols-2 gap-2 border-b border-ink-700 bg-ink-800/60 px-4 py-2.5 md:grid-cols-5">
-      <div class="rounded-xl border border-ink-700 bg-ink-800 px-3.5 py-2.5">
-        <p class="text-[11px] uppercase tracking-wide text-slate-400">Municipios</p>
-        <p class="text-xl font-semibold text-white" id="kpiMunis">—</p>
-        <p class="text-[11px] text-slate-500">DIVIPOLA · DANE</p>
-      </div>
-      <div class="rounded-xl border border-ink-700 bg-ink-800 px-3.5 py-2.5">
-        <p class="text-[11px] uppercase tracking-wide text-slate-400">Red vial</p>
-        <p class="text-xl font-semibold text-white"><span id="kpiKm">—</span> <span class="text-sm font-normal text-slate-400">km</span></p>
-        <p class="text-[11px] text-slate-500"><span id="kpiTramos">—</span> tramos · INVIAS</p>
-      </div>
-      <div class="rounded-xl border border-ink-700 bg-ink-800 px-3.5 py-2.5">
-        <p class="text-[11px] uppercase tracking-wide text-slate-400">PIB <span id="kpiPibAnio"></span></p>
-        <p class="text-xl font-semibold text-white" id="kpiPib">—</p>
-        <p class="text-[11px] text-slate-500">miles de millones COP · DANE</p>
-      </div>
-      <div class="rounded-xl border border-ink-700 bg-ink-800 px-3.5 py-2.5">
-        <p class="text-[11px] uppercase tracking-wide text-slate-400">Agro</p>
-        <p class="text-xl font-semibold text-white"><span id="kpiAgro">—</span> <span class="text-sm font-normal text-slate-400">t</span></p>
-        <p class="text-[11px] text-slate-500" id="kpiAgroDetalle">EVA · MinAgricultura</p>
-      </div>
-      <div class="rounded-xl border border-ink-700 bg-ink-800 px-3.5 py-2.5">
-        <p class="text-[11px] uppercase tracking-wide text-slate-400">Registros</p>
-        <p class="text-xl font-semibold text-white" id="kpiTotal">—</p>
-        <p class="text-[11px] text-slate-500">unificados con linaje</p>
-      </div>
-    </section>
+        <!-- Search global: abre command palette -->
+        <button id="searchBtn"
+          class="ml-auto flex w-full max-w-md items-center gap-2 rounded-lg border border-ink-600 bg-ink-800 px-3 py-1.5 text-left text-[13px] text-slate-500 hover:border-slate-500 hover:text-slate-300">
+          <span class="icon" data-icon="search"></span>
+          <span class="flex-1 truncate">Buscar municipios, vías, actividades, datasets…</span>
+          <kbd class="rounded border border-ink-600 bg-ink-700 px-1.5 py-0.5 text-2xs text-slate-400">Ctrl K</kbd>
+        </button>
 
-    <!-- ===== Cuerpo: mapa + panel lateral ===== -->
-    <main class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-3">
-      <div class="relative lg:col-span-2 min-h-[40vh]">
-        <div id="map" class="absolute inset-0"></div>
-        <!-- spinner de carga del mapa: app.js lo muestra solo si la carga tarda > 500 ms -->
-        <div id="mapSpinner" class="pointer-events-none absolute inset-0 z-[1000] hidden place-items-center bg-ink-900/40">
-          <div class="h-9 w-9 animate-spin rounded-full border-[3px] border-ink-600 border-t-serie-vial" role="status" aria-label="Cargando mapa"></div>
-        </div>
+        <div id="topStatus" class="flex shrink-0 items-center gap-2 text-2xs text-slate-500"></div>
+      </header>
+
+      <!-- Área central dinámica -->
+      <main id="view" class="min-h-0 flex-1 overflow-y-auto"></main>
+    </div>
+
+    <!-- ===== Inspector contextual (derecha) ===== -->
+    <aside id="inspector" class="hidden w-[360px] shrink-0 flex-col border-l border-ink-700/70 bg-ink-900 lg:flex" style="display:none"></aside>
+  </div>
+
+  <!-- ===== Command palette ===== -->
+  <div id="paletteWrap" class="fixed inset-0 z-[2000] hidden items-start justify-center bg-black/50 pt-[12vh]">
+    <div class="glass w-full max-w-xl overflow-hidden rounded-xl border border-ink-600 shadow-2xl">
+      <div class="flex items-center gap-2.5 border-b border-ink-700 px-4 py-3">
+        <span class="icon text-slate-500" data-icon="search"></span>
+        <input id="paletteInput" type="text" autocomplete="off" spellcheck="false"
+          placeholder="Buscar en toda la base de conocimiento…"
+          class="flex-1 bg-transparent text-[15px] text-slate-100 placeholder-slate-500 outline-none" />
+        <kbd class="rounded border border-ink-600 bg-ink-700 px-1.5 py-0.5 text-2xs text-slate-500">esc</kbd>
       </div>
-
-      <aside class="flex min-h-0 flex-col border-l border-ink-700 bg-ink-800/40">
-        <!-- Gráfico PIB -->
-        <div class="border-b border-ink-700 p-3.5">
-          <h2 class="text-xs font-semibold uppercase tracking-wide text-slate-400">PIB anual <span id="chartScope" class="text-slate-500"></span></h2>
-          <p class="text-[11px] text-slate-500">Precios corrientes, todas las actividades · miles de millones COP</p>
-          <div class="mt-2 h-44"><canvas id="pibChart"></canvas></div>
-        </div>
-
-        <!-- Tabla multi-dominio -->
-        <div class="flex min-h-0 flex-1 flex-col p-3.5">
-          <div class="flex items-center gap-1.5">
-            <div id="domTabs" class="flex gap-1.5 text-xs"></div>
-            <button id="exportCsv" class="ml-auto rounded-lg border border-ink-600 bg-ink-700 px-2.5 py-1 text-[11px] text-slate-300 hover:bg-ink-600">Exportar CSV</button>
-          </div>
-          <div class="mt-2 min-h-0 flex-1 overflow-auto scroll-thin rounded-lg border border-ink-700">
-            <table class="w-full text-left text-xs">
-              <thead id="tblHead" class="sticky top-0 bg-ink-700 text-slate-300"></thead>
-              <tbody id="tblBody" class="divide-y divide-ink-700/60"></tbody>
-            </table>
-          </div>
-          <div class="mt-2 flex items-center gap-2 text-[11px] text-slate-400">
-            <span id="tblInfo"></span>
-            <button id="prevPg" class="ml-auto rounded border border-ink-600 px-2 py-0.5 hover:bg-ink-700">‹</button>
-            <button id="nextPg" class="rounded border border-ink-600 px-2 py-0.5 hover:bg-ink-700">›</button>
-          </div>
-        </div>
-      </aside>
-    </main>
-
-    <!-- ===== Footer: trazabilidad ===== -->
-    <footer class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-ink-700 bg-ink-800 px-4 py-1.5 text-[11px] text-slate-500 shrink-0">
-      <span>Principio OSINT: cada dato enlaza su fuente oficial.</span>
-      <span id="fuentesLine"></span>
-    </footer>
+      <ul id="paletteResults" class="max-h-[46vh] overflow-y-auto py-1.5"></ul>
+      <div class="flex items-center gap-3 border-t border-ink-700 px-4 py-1.5 text-2xs text-slate-500">
+        <span><kbd class="text-slate-400">↑↓</kbd> navegar</span>
+        <span><kbd class="text-slate-400">↵</kbd> abrir</span>
+        <span class="ml-auto" id="paletteMeta"></span>
+      </div>
+    </div>
   </div>
 </body>
 </html>

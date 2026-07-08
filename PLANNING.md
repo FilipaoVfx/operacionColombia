@@ -343,7 +343,7 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
   - [x] Scheduler por periodicidad de fuente (SECOP diario, EVA semestral, PIB anual) — M2 freshness.
   - [x] Cola de trabajos: `enqueue(job)`, workers idempotentes, reintentos con backoff, dead-letter.
   - [x] **Streaming** en `FileConnector`: parse por chunks (Excel/CSV grandes) → normalize → insert → next chunk.
-  - [ ] **Fan-out** tras normalizar: storage → search → embeddings → graph (en paralelo, no secuencial).
+  - [x] **Fan-out** tras normalizar: storage → vistas → entidades → search como jobs independientes (embeddings/graph al llegar M12/M13).
   - [ ] Separación física de cargas: ETL/scrapers/API/embeddings como procesos independientes.
   - [x] Detección de cambios antes de encolar (skip si `hash/etag` igual).
 - **Contrato expuesto:** `Job` (§6.5), `Queue`, `Scheduler`.
@@ -620,13 +620,13 @@ interface Job {
 | M2 Metadata/Lineage/Versioning/Freshness | 1 | M0, M1 | HECHO (registry + versionado esquema + skip por etag/hash + etl_runs) |
 | M3 DIVIPOLA + Normalización ⭐ | 1 | M1 | HECHO (1122 municipios; resolución por código/nombre+depto; 100% depto en economía) |
 | M4 Storage + CQRS | 1 | M3 | PARCIAL (write store `data/osint.db` con upsert idempotente; proyección read model pendiente → M8) |
-| M5 Orchestration (colas/scheduler/streaming) | 2 | M1, M4 | PENDIENTE |
-| M6 Entity Resolution | 2 | M3, M4 | PENDIENTE |
-| M8 Materialized Views | 2 | M4 | PENDIENTE |
-| M9 Read API + Cache | 3 | M4, M8 | PENDIENTE |
-| M7 Search (FTS+vector+híbrido) | 3 | M3, M4 | PENDIENTE |
-| M10 Frontend unificado | 3 | M9 | HECHO (2026-07-08: panel + carga por bbox/spinner; pendiente validar budget: carga < 1.5 s, Lighthouse) |
-| M15 Caching | 3 | M9 | PENDIENTE |
+| M5 Orchestration (colas/scheduler/streaming) | 2 | M1, M4 | HECHO (cola SQL + scheduler + workers + streaming + fan-out) |
+| M6 Entity Resolution | 2 | M3, M4 | PARCIAL (matching NIT/código/nombre + cola de revisión; dedupe SECOP pendiente — bloqueante #8) |
+| M8 Materialized Views | 2 | M4 | HECHO (builder incremental + vistas versionadas) |
+| M9 Read API + Cache | 3 | M4, M8 | HECHO (endpoints + cursor + ETag/304 clavado a versión de datos) |
+| M7 Search (FTS+vector+híbrido) | 3 | M3, M4 | HECHO (FTS5 + facetas + autocompletado; vector/híbrido diferido a M13 — ADR-006) |
+| M10 Frontend unificado | 3 | M9 | HECHO (2026-07-08: rediseño shell — sidebar de vistas, command palette Ctrl K, inspector de linaje, deep-link por hash; pendiente validar budget: carga < 1.5 s, Lighthouse) |
+| M15 Caching | 3 | M9 | PARCIAL (cache API/search por versión + single-flight; edge/CDN pendiente de ADR-001) |
 | M11 Socrata Explorer | 4 | M1, M2 | PENDIENTE |
 | M12 Knowledge Graph | 4 | M6 | PENDIENTE |
 | M13 IA / RAG / Agentes | 4 | M7, M12 | PENDIENTE |

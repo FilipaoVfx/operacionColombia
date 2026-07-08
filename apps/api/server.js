@@ -237,10 +237,11 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     if (!q.trim()) return { hits: [], facetas: { dominio: [], depto: [] }, total: 0 };
     const depto = qp.get("depto") && /^\d{2}$/.test(qp.get("depto")) ? qp.get("depto") : null;
     const dominio = qp.get("dominio") && DOMINIOS.has(qp.get("dominio")) ? qp.get("dominio") : null;
+    const limit = Math.min(parseInt(qp.get("limit"), 10) || 12, 100);
 
     const indexado = prep("SELECT COUNT(*) c FROM search_indexed").get().c;
     if (indexado > 0) {
-      const out = searchQuery(db, { q, dominio, depto, limit: 12 });
+      const out = searchQuery(db, { q, dominio, depto, limit });
       const conGeom = prep("SELECT geom IS NOT NULL g FROM registros WHERE id_interno=?");
       out.hits = out.hits.map((h) => ({ ...h, con_geom: !!conGeom.get(h.id_interno)?.g }));
       return out;
@@ -251,8 +252,8 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     const da = [depto, dominio].filter(Boolean);
     const rows = prep(`
       SELECT id_interno, dominio, campos, divipola_depto depto, geom IS NOT NULL con_geom
-      FROM registros WHERE search_blob LIKE ? ${dw} LIMIT 12
-    `).all(`%${nq}%`, ...da);
+      FROM registros WHERE search_blob LIKE ? ${dw} LIMIT ?
+    `).all(`%${nq}%`, ...da, limit);
     const hits = rows.map((r) => {
       const c = JSON.parse(r.campos);
       return {

@@ -494,10 +494,10 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M1 (se instrumenta desde el primer conector).  **Habilita:** operar con budget.
 - **Entregables:** `/packages/observability` + dashboard operativo.
 - **Tareas:**
-  - [ ] Logger estructurado + métricas (contadores/histogramas) por módulo.
-  - [ ] Métricas ETL: tiempo por conector, filas procesadas, errores, freshness.
-  - [ ] Métricas API/Search: latencias P95/P99, cache hit, error rate.
-  - [ ] Alertas por umbral (budget §2.3) + dashboard.
+  - [x] Logger estructurado (JSON lines) + métricas (contadores/percentiles) — `/packages/observability`.
+  - [x] Métricas ETL: tiempo por conector, filas, errores (persistidas en `etl_runs` M2) + freshness (`dataset_meta`).
+  - [x] Métricas API/Search: latencias P50/P95/P99 por ruta, cache hit, error rate (wrapper en Read API).
+  - [x] Alertas por umbral (budget §2.3) + dashboard operativo → endpoint `/api/status` (budget vs medido, `ok`/`alertas`).
 - **Aceptación:** todo el budget §2.3 es **medible** en el dashboard; alertas disparan.
 - **Riesgos:** métricas caras → muestreo.
 
@@ -633,7 +633,7 @@ interface Job {
 | M11 Socrata Explorer | 4 | M1, M2 | HECHO (2026-07-14: discovery + preview + profile + registro autoservicio en DB → ingesta vía M1/M5 sin tocar código; export json/csv) |
 | M12 Knowledge Graph | 4 | M6 | PENDIENTE |
 | M13 IA / RAG / Agentes | 4 | M7, M12 | PENDIENTE |
-| M14 Observabilidad | transversal | M1 | PENDIENTE |
+| M14 Observabilidad | transversal | M1 | HECHO (2026-07-14: logger JSON + Metrics por ruta + `/api/status` budget-vs-medido con alertas; ETL ya medía en `etl_runs`) |
 
 **Primer paso concreto para el agente:** cerrar bloqueantes de gobernanza/legal/token
 (CATALOGO §5) → **M0** → **M1 (C1 Socrata)** contra un dataset chico (ej. `kgyi-qc7j` PIB) →

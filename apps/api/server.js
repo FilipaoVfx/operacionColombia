@@ -19,6 +19,7 @@ import {
   migrateExplorer, searchCatalog, previewDataset, profileDataset,
   registerSource, listExplorerSources,
 } from "../../services/socrata-explorer/index.js";
+import { Metrics, budgetReport, createLogger } from "../../packages/observability/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = join(__dirname, "..", "web");
@@ -54,14 +55,17 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
   let cacheVer = null;
   const respCache = new Map(); // url → body serializado (válido solo para cacheVer)
   function cached(url, produce) {
+    let hit = false;
     const ver = dataVersion();
     if (ver !== cacheVer) { respCache.clear(); cacheVer = ver; }
     let body = respCache.get(url);
     if (body === undefined) {
       body = JSON.stringify(produce());
       respCache.set(url, body);
+    } else {
+      hit = true;
     }
-    return { body, etag: `"${ver}-${createHash("sha256").update(url).digest("hex").slice(0, 12)}"` };
+    return { body, hit, etag: `"${ver}-${createHash("sha256").update(url).digest("hex").slice(0, 12)}"` };
   }
 
   // -------------------------------------------------------------------------
@@ -316,8 +320,10 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
 
   /** JSON cacheable: caché en memoria por versión + ETag; If-None-Match → 304. */
   function sendCachedJson(req, res, url, produce, { maxAge = 60 } = {}) {
-    const { body, etag } = cached(url, produce);
+    const { body, hit, etag } = cached(url, produce);
+    if (hit) res.cacheHit = true; // leído por el wrapper de métricas (M14)
     if (req.headers["if-none-match"] === etag) {
+      res.cacheHit = true; // 304: el cliente ya tiene la versión vigente
       res.writeHead(304, { ETag: etag, "Cache-Control": `public, max-age=${maxAge}` });
       return res.end();
     }
@@ -354,7 +360,10 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     }
   }
 
-  return async function handler(req, res) {
+  const metrics = new Metrics();
+  const log = createLogger("api");
+
+  async function route(req, res) {
     try {
       const url = new URL(req.url, `http://${req.headers.host}`);
       const path = url.pathname;
@@ -363,6 +372,10 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
 
       if (path === "/api/health") {
         return sendJson(req, res, { ok: true, version_datos: dataVersion() });
+      }
+      // M14 — dashboard operativo: budget vs medido (API en vivo + ETL/freshness de la DB)
+      if (path === "/api/status") {
+        return sendJson(req, res, budgetReport(db, metrics));
       }
       if (path === "/api/meta") return sendCachedJson(req, res, cacheKey, () => handleMeta(), { maxAge: 300 });
       if (path === "/api/kpi") return sendCachedJson(req, res, cacheKey, () => handleKpi(qp), { maxAge: 300 });
@@ -427,9 +440,23 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
 
       return serveStatic(req, res, path);
     } catch (err) {
-      console.error("ERR", req.url, err);
+      log.error("error interno", { url: req.url, detail: String(err.message) });
       sendJson(req, res, { error: "error interno", detail: String(err.message) }, { status: 500 });
     }
+  }
+
+  // Wrapper de métricas (M14): latencia + error + cache hit por grupo de ruta.
+  // Solo instrumenta /api/*; estáticos y /api/status quedan fuera para no sesgar percentiles.
+  return async function handler(req, res) {
+    const path = req.url.split("?")[0];
+    if (!path.startsWith("/api/") || path === "/api/status") return route(req, res);
+    const label = path.split("/").slice(0, 3).join("/"); // /api/kpi, /api/registros, /api/explorer
+    const t0 = performance.now();
+    await route(req, res); // al resolver, la respuesta ya se escribió (handlers síncronos o awaited)
+    metrics.observe(label, +(performance.now() - t0).toFixed(2), {
+      error: res.statusCode >= 500,
+      cacheHit: Boolean(res.cacheHit),
+    });
   };
 }
 

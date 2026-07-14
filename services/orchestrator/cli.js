@@ -6,6 +6,7 @@
 //   node services/orchestrator/cli.js status
 import { openOsintDb } from "../../packages/metadata/registry.js";
 import { SOURCES } from "../connectors/sources.config.js";
+import { listExplorerSources } from "../socrata-explorer/index.js";
 import { Queue } from "./queue.js";
 import { scheduleDue } from "./scheduler.js";
 import { createHandlers, workUntilEmpty } from "./worker.js";
@@ -22,7 +23,7 @@ async function main() {
   if (cmd === "tick") {
     const recovered = queue.recoverStale();
     if (recovered) console.log(`recuperados ${recovered} jobs huérfanos`);
-    const due = scheduleDue(db, queue, SOURCES);
+    const due = scheduleDue(db, queue, [...SOURCES, ...listExplorerSources(db)]);
     console.log(due.length ? `encoladas ${due.length} ingestas: ${due.map((d) => d.sourceId).join(", ")}` : "ninguna fuente vencida");
     const done = await workUntilEmpty(queue, createHandlers(db), { log: console.log });
     console.log("resumen:", done);

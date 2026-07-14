@@ -12,6 +12,7 @@ import { assertConnector } from "../../packages/contracts/index.js";
 import { openOsintDb, MetadataRegistry, WriteStore } from "../../packages/metadata/registry.js";
 import { buildRecord } from "../../packages/core-model/index.js";
 import { loadDivipola, DivipolaResolver } from "../../packages/divipola/index.js";
+import { resolveSource, listExplorerSources } from "../socrata-explorer/index.js";
 
 const CONNECTORS = {
   socrata: assertConnector(socrata, "socrata"),
@@ -117,12 +118,13 @@ async function main() {
   const db = openOsintDb();
 
   if (cmd === "list") {
-    console.table(SOURCES.map((s) => ({ id: s.id, kind: s.kind, domain: s.domain, priority: s.priority, schedule: s.schedule, nombre: s.nombre })));
+    const all = [...SOURCES, ...listExplorerSources(db)];
+    console.table(all.map((s) => ({ id: s.id, kind: s.kind, domain: s.domain, priority: s.priority, schedule: s.schedule, nombre: s.nombre })));
   } else if (cmd === "status") {
     printStatus(db);
   } else if (cmd === "run") {
     const force = args.has("force");
-    const targets = args.has("all") ? SOURCES : [getSource(String(args.get("source")))];
+    const targets = args.has("all") ? [...SOURCES, ...listExplorerSources(db)] : [resolveSource(db, String(args.get("source")), getSource)];
     let failed = 0;
     for (const s of targets) {
       try {

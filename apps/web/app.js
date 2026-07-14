@@ -109,6 +109,7 @@ const NAV = [
   {
     section: "Datos",
     items: [
+      { id: "explorer", label: "Explorer", icon: "search" },
       { id: "fuentes", label: "Datasets", icon: "database" },
       { id: "conectores", label: "Conectores", icon: "plug" },
       { id: "etl", label: "ETL Center", icon: "workflow" },
@@ -130,6 +131,7 @@ const VIEWS = {
   overview: { title: "Inicio", mount: mountOverview, unmount: unmountOverview },
   ...Object.fromEntries(REAL_DOMAINS.map((d) => [d, { title: DOM_LABEL[d], mount: () => mountDomain(d) }])),
   fuentes: { title: "Datasets", mount: mountFuentes },
+  explorer: { title: "Explorer", mount: mountExplorer },
   mapa: { title: "Mapa", mount: mountMapaFull, unmount: unmountMapaFull },
   conectores: { title: "Conectores", mount: mountConectores },
   etl: { title: "ETL Center", mount: mountEtl },

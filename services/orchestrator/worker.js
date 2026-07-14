@@ -6,12 +6,13 @@ import { resolveDomain } from "../entity-res/index.js";
 import { buildViews } from "../views-builder/index.js";
 import { buildSearchIndex } from "../search-indexer/index.js";
 import { buildGeoIndex } from "../geo-indexer/index.js";
+import { resolveSource } from "../socrata-explorer/index.js";
 
 /** Handlers por tipo de job. Todos idempotentes: reejecutar no duplica estado. */
 export function createHandlers(db) {
   return {
     async ingest(payload, { queue }) {
-      const source = getSource(payload.sourceId);
+      const source = resolveSource(db, payload.sourceId, getSource);
       const res = await runSource(db, source, { force: Boolean(payload.force) });
       // fan-out: storage listo → vistas, entidades y search como jobs independientes
       if (res.resultado === "ok" && (res.insertadas || res.actualizadas)) {

@@ -15,6 +15,10 @@ import { normName } from "../../packages/core-model/index.js";
 import { migrateViews, buildViews } from "../../services/views-builder/index.js";
 import { migrateSearch, searchQuery } from "../../services/search-indexer/index.js";
 import { migrateGeo, buildGeoIndex } from "../../services/geo-indexer/index.js";
+import {
+  migrateExplorer, searchCatalog, previewDataset, profileDataset,
+  registerSource, listExplorerSources,
+} from "../../services/socrata-explorer/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = join(__dirname, "..", "web");
@@ -23,6 +27,7 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
   migrateViews(db);
   migrateSearch(db);
   migrateGeo(db);
+  migrateExplorer(db);
   buildGeoIndex(db); // incremental: solo geoms nuevos/cambiados desde el último build
   // read models faltantes (DB nueva) se construyen una vez al arrancar
   if (!db.prepare("SELECT COUNT(*) c FROM read_models").get().c) {
@@ -326,6 +331,17 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       { "Cache-Control": cache ? `public, max-age=${cache}` : "no-store" });
   }
 
+  async function readJsonBody(req, { max = 1_000_000 } = {}) {
+    let size = 0;
+    const chunks = [];
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > max) throw new Error("cuerpo demasiado grande");
+      chunks.push(chunk);
+    }
+    return chunks.length ? JSON.parse(Buffer.concat(chunks)) : {};
+  }
+
   const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".ico": "image/x-icon" };
   async function serveStatic(req, res, pathname) {
     const rel = pathname === "/" ? "/index.html" : pathname;
@@ -351,6 +367,45 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       if (path === "/api/meta") return sendCachedJson(req, res, cacheKey, () => handleMeta(), { maxAge: 300 });
       if (path === "/api/kpi") return sendCachedJson(req, res, cacheKey, () => handleKpi(qp), { maxAge: 300 });
       if (path === "/api/search") return sendCachedJson(req, res, cacheKey, () => handleSearch(qp), { maxAge: 60 });
+
+      // M11 — Socrata Explorer: llamadas en vivo al catálogo externo, sin caché por versión
+      // de datos (no son datos ingeridos todavía). Errores de red → 502, no 500.
+      if (path === "/api/explorer/search") {
+        try {
+          const results = await searchCatalog({
+            q: qp.get("q") || undefined, category: qp.get("category") || undefined,
+            domain: qp.get("domain") || undefined, limit: qp.get("limit") ? Number(qp.get("limit")) : undefined,
+          });
+          return sendJson(req, res, { results });
+        } catch (e) { return sendJson(req, res, { error: "catálogo no disponible", detail: String(e.message) }, { status: 502 }); }
+      }
+      if (path === "/api/explorer/preview") {
+        if (!qp.get("id")) return sendJson(req, res, { error: "falta ?id=" }, { status: 400 });
+        try {
+          const out = await previewDataset(qp.get("id"), { domain: qp.get("domain") || undefined, sample: qp.get("sample") ? Number(qp.get("sample")) : undefined });
+          return sendJson(req, res, out);
+        } catch (e) { return sendJson(req, res, { error: "dataset no disponible", detail: String(e.message) }, { status: 502 }); }
+      }
+      if (path === "/api/explorer/profile") {
+        if (!qp.get("id")) return sendJson(req, res, { error: "falta ?id=" }, { status: 400 });
+        try {
+          const out = await profileDataset(qp.get("id"), { domain: qp.get("domain") || undefined, sample: qp.get("sample") ? Number(qp.get("sample")) : undefined });
+          return sendJson(req, res, out);
+        } catch (e) { return sendJson(req, res, { error: "dataset no disponible", detail: String(e.message) }, { status: 502 }); }
+      }
+      if (path === "/api/explorer/sources") {
+        const registradas = listExplorerSources(db).map((s) => ({ id: s.id, nombre: s.nombre, domain: s.domain, priority: s.priority, schedule: s.schedule }));
+        const meta = db.prepare("SELECT source_id, filas, estado, last_checked FROM dataset_meta").all();
+        const metaById = Object.fromEntries(meta.map((m) => [m.source_id, m]));
+        return sendJson(req, res, { fuentes: registradas.map((s) => ({ ...s, ingesta: metaById[s.id] ?? null })) });
+      }
+      if (path === "/api/explorer/register" && req.method === "POST") {
+        try {
+          const body = await readJsonBody(req);
+          const cfg = registerSource(db, body);
+          return sendJson(req, res, { ok: true, fuente: { id: cfg.id, nombre: cfg.nombre, domain: cfg.domain, schedule: cfg.schedule } }, { status: 201 });
+        } catch (e) { return sendJson(req, res, { error: "registro inválido", detail: String(e.message) }, { status: 400 }); }
+      }
 
       if (path.startsWith("/api/registros/")) {
         const rec = handleRegistroById(decodeURIComponent(path.slice("/api/registros/".length)));

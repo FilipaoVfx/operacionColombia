@@ -442,12 +442,12 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M1, M2.  **Habilita:** escalado de fuentes.
 - **Entregables:** módulo Explorer (discovery, preview, query builder, quality profile, export).
 - **Tareas:**
-  - [ ] Discovery: buscar datasets por institución/categoría/keyword (API de catálogo Socrata).
-  - [ ] Exploración: preview + metadata + estadísticas básicas.
-  - [ ] Query Builder visual de SoQL + exportar la consulta como fuente registrada (a M1).
-  - [ ] Perfil de calidad: nulos, duplicados, cobertura, distribución de columnas.
-  - [ ] Visualizaciones rápidas (tabla/series/mapa/histograma) + export (JSON/CSV/GeoJSON/Parquet/SQLite).
-  - [ ] Programación ETL (diario/semanal/mensual) → registra job en M5.
+  - [x] Discovery: buscar datasets por institución/categoría/keyword (API de catálogo Socrata).
+  - [x] Exploración: preview + metadata + estadísticas básicas.
+  - [x] Query Builder: `$where` SoQL al registrar la fuente (builder visual en UI queda para backlog).
+  - [x] Perfil de calidad: nulos, duplicados, cobertura, distribución de columnas (sobre muestra).
+  - [x] Export de muestra JSON/CSV (GeoJSON/Parquet/SQLite diferidos hasta caso de uso real).
+  - [x] Programación ETL (diario/semanal/mensual) → `explorer_sources` entra al scheduler M5.
 - **Contrato expuesto:** genera `sources.config` + `Job` para M1/M5.
 - **Aceptación:** desde el Explorer se registra una fuente nueva y queda ingiriendo sin tocar código.
 - **Pruebas:** alta de un dataset nuevo end-to-end.
@@ -627,7 +627,7 @@ interface Job {
 | M7 Search (FTS+vector+híbrido) | 3 | M3, M4 | HECHO (FTS5 + facetas + autocompletado; vector/híbrido diferido a M13 — ADR-006) |
 | M10 Frontend unificado | 3 | M9 | HECHO (2026-07-08: rediseño shell — sidebar de vistas, command palette Ctrl K, inspector de linaje, deep-link por hash; pendiente validar budget: carga < 1.5 s, Lighthouse) |
 | M15 Caching | 3 | M9 | PARCIAL (cache API/search por versión + single-flight; edge/CDN pendiente de ADR-001) |
-| M11 Socrata Explorer | 4 | M1, M2 | PENDIENTE |
+| M11 Socrata Explorer | 4 | M1, M2 | HECHO (2026-07-14: discovery + preview + profile + registro autoservicio en DB → ingesta vía M1/M5 sin tocar código; export json/csv) |
 | M12 Knowledge Graph | 4 | M6 | PENDIENTE |
 | M13 IA / RAG / Agentes | 4 | M7, M12 | PENDIENTE |
 | M14 Observabilidad | transversal | M1 | PENDIENTE |

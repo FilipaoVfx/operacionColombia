@@ -362,7 +362,10 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Tareas:**
   - [x] Definir entidades canónicas + IDs internos estables + relaciones a datasets.
   - [x] Matching por **NIT** (entidades/proveedores), por **código** (vial, DIVIPOLA), por **nombre normalizado**.
-  - [ ] Alias y reglas de deduplicación (dedupe SECOP I/II/Integrado — bloqueante #8).
+  - [x] Alias y reglas de deduplicación (dedupe SECOP I/II/Integrado — bloqueante #8):
+        fuente canónica `jbjy-vk9h` (precedencia SECOP II > tb27-zmix > Integrado), llave
+        natural `nit_entidad`+`referencia|proceso` normalizados, tabla `contrato_dedupe`,
+        vistas cuentan solo `preferida=1`.
   - [x] Cola de revisión para matches dudosos (umbral de confianza).
 - **Contrato expuesto:** `Entity`, `EntityRef`, `ResolveResult`.
 - **Aceptación:** proveedor con múltiples grafías se resuelve a 1 entidad; contratos no se triplican.
@@ -621,7 +624,7 @@ interface Job {
 | M3 DIVIPOLA + Normalización ⭐ | 1 | M1 | HECHO (1122 municipios; resolución por código/nombre+depto; 100% depto en economía) |
 | M4 Storage + CQRS | 1 | M3 | PARCIAL (write store `data/osint.db` con upsert idempotente; proyección read model pendiente → M8) |
 | M5 Orchestration (colas/scheduler/streaming) | 2 | M1, M4 | HECHO (cola SQL + scheduler + workers + streaming + fan-out) |
-| M6 Entity Resolution | 2 | M3, M4 | PARCIAL (matching NIT/código/nombre + cola de revisión; dedupe SECOP pendiente — bloqueante #8) |
+| M6 Entity Resolution | 2 | M3, M4 | HECHO (2026-07-14: matching NIT/código/nombre + cola de revisión + dedupe SECOP por llave natural y precedencia de fuente + extractores contratación/entidades) |
 | M8 Materialized Views | 2 | M4 | HECHO (builder incremental + vistas versionadas) |
 | M9 Read API + Cache | 3 | M4, M8 | HECHO (endpoints + cursor + ETag/304 clavado a versión de datos) |
 | M7 Search (FTS+vector+híbrido) | 3 | M3, M4 | HECHO (FTS5 + facetas + autocompletado; vector/híbrido diferido a M13 — ADR-006) |

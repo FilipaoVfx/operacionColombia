@@ -53,3 +53,51 @@ test("resolveDomain es idempotente: reejecutar no duplica entidades ni vínculos
   assert.equal(first.entidades, second.entidades);
   assert.equal(db.prepare("SELECT COUNT(*) c FROM entidad_registros").get().c, 2, "Municipio + Departamento");
 });
+
+// --- M6 dedupe SECOP (bloqueante #8) ---
+import { dedupeContratos, contratoKey } from "../services/entity-res/index.js";
+
+test("dedupe SECOP: mismo contrato en SECOP II e Integrado → 1 preferida (SECOP II)", () => {
+  const db = freshDb();
+  const store = new WriteStore(db);
+  const mk = (sourceId, idFuente, campos) => buildRecord({
+    source: { id: sourceId, domain: "contratacion", nombre: sourceId, endpoint: "http://x", kind: "socrata" },
+    idFuente, campos,
+  });
+  // mismo contrato: misma entidad + referencia, distinta grafía entre datasets
+  store.upsert(mk("jbjy-vk9h", "CO1.123", { nit_entidad: "899999.063", referencia: "CD-2026-001", valor_contrato: 900e6 }));
+  store.upsert(mk("rpmr-utcd", "999888", { nit_entidad: "899999063", referencia: "cd 2026 001", valor_contrato: 900e6 }));
+  // contrato distinto: no se agrupa
+  store.upsert(mk("rpmr-utcd", "999889", { nit_entidad: "899999063", referencia: "CD-2026-002", valor_contrato: 100e6 }));
+
+  const res = dedupeContratos(db);
+  assert.equal(res.contratos, 3);
+  assert.equal(res.grupos, 2);
+  assert.equal(res.duplicados, 1);
+  const pref = db.prepare("SELECT id_canonico FROM contrato_dedupe WHERE id_interno=?").get("rpmr-utcd:999888");
+  assert.equal(pref.id_canonico, "jbjy-vk9h:CO1.123", "canónica es la de SECOP II");
+  assert.equal(db.prepare("SELECT preferida FROM contrato_dedupe WHERE id_interno=?").get("jbjy-vk9h:CO1.123").preferida, 1);
+});
+
+test("dedupe: sin referencia ni proceso la fila queda como única (no colapsa por accidente)", () => {
+  assert.equal(contratoKey({ nit_entidad: "1" }), null);
+  assert.equal(contratoKey({ referencia: "A-1", nit_entidad: "800.100" }), "800100:A1");
+});
+
+test("vistas de contratación excluyen duplicados (COALESCE preferida)", async () => {
+  const { migrateViews, buildViews } = await import("../services/views-builder/index.js");
+  const db = freshDb();
+  migrateViews(db);
+  const store = new WriteStore(db);
+  const mk = (sourceId, idFuente, campos) => buildRecord({
+    source: { id: sourceId, domain: "contratacion", nombre: sourceId, endpoint: "http://x", kind: "socrata" },
+    idFuente, campos, divipola_depto: "11",
+  });
+  store.upsert(mk("jbjy-vk9h", "C1", { nit_entidad: "1", referencia: "R1", anio: 2026, valor_contrato: 100, proveedor: "ACME" }));
+  store.upsert(mk("rpmr-utcd", "X1", { nit_entidad: "1", referencia: "R1", anio: 2026, valor_contrato: 100, proveedor: "ACME" }));
+  dedupeContratos(db);
+  buildViews(db, "contratacion");
+  const row = db.prepare("SELECT contratos, valor_total FROM rm_contratos_depto WHERE cod_dpto='11'").get();
+  assert.equal(row.contratos, 1, "duplicado no cuenta");
+  assert.equal(row.valor_total, 100, "valor no se duplica");
+});

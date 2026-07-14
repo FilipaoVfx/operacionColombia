@@ -1,8 +1,10 @@
 // M8 — Materialized views (PLANNING): KPIs precalculados como tablas rm_* leídas
 // con SELECT directo; nada de SUM()/GROUP BY en caliente. Rebuild incremental por
 // dominio afectado (disparado por el fan-out de M5), versionado para cacheo.
+import { migrateEntities } from "../entity-res/index.js";
 
 export function migrateViews(db) {
+  migrateEntities(db); // las vistas de contratación leen contrato_dedupe (M6)
   db.exec(`
     CREATE TABLE IF NOT EXISTS read_models (
       view_name TEXT PRIMARY KEY,
@@ -88,7 +90,9 @@ export const VIEWS = [
              json_extract(campos,'$.anio') anio,
              COUNT(*) contratos,
              ROUND(SUM(json_extract(campos,'$.valor_contrato')), 0) valor_total
-      FROM registros WHERE dominio='contratacion'
+      FROM registros r
+      LEFT JOIN contrato_dedupe d ON d.id_interno = r.id_interno
+      WHERE dominio='contratacion' AND COALESCE(d.preferida, 1) = 1
       GROUP BY divipola_depto, anio
     `,
   },
@@ -100,8 +104,10 @@ export const VIEWS = [
              json_extract(campos,'$.proveedor') proveedor,
              COUNT(*) contratos,
              ROUND(SUM(json_extract(campos,'$.valor_contrato')), 0) valor_total
-      FROM registros
+      FROM registros r
+      LEFT JOIN contrato_dedupe d ON d.id_interno = r.id_interno
       WHERE dominio='contratacion' AND json_extract(campos,'$.proveedor') IS NOT NULL
+        AND COALESCE(d.preferida, 1) = 1
       GROUP BY divipola_depto, proveedor
     `,
   },

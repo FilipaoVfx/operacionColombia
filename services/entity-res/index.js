@@ -45,6 +45,17 @@ export function migrateEntities(db) {
       candidatos TEXT,               -- JSON: ids de entidades candidatas
       motivo     TEXT, creado_en TEXT, resuelto INTEGER DEFAULT 0
     );
+
+    -- dedupe SECOP (bloqueante #8): un contrato puede venir de SECOP II, Contratos SECOP II
+    -- e Integrado a la vez. Se agrupa por llave natural y se marca UNA fila preferida por
+    -- grupo; los read models solo cuentan preferida=1.
+    CREATE TABLE IF NOT EXISTS contrato_dedupe (
+      id_interno  TEXT PRIMARY KEY,
+      llave       TEXT NOT NULL,     -- nit_entidad + referencia/proceso normalizados
+      id_canonico TEXT NOT NULL,     -- id_interno de la fila preferida del grupo
+      preferida   INTEGER NOT NULL   -- 1 = cuenta en vistas; 0 = duplicado
+    );
+    CREATE INDEX IF NOT EXISTS idx_dedupe_llave ON contrato_dedupe(llave);
   `);
 }
 
@@ -161,7 +172,85 @@ export const EXTRACTORS = {
     if (reg.divipola_depto) refs.push({ tipo: "Departamento", codigo: reg.divipola_depto, nombre: campos.territorial });
     return refs;
   },
+  contratacion(reg, campos) {
+    const refs = [];
+    if (campos.nit_entidad) refs.push({ tipo: "EntidadPublica", nit: campos.nit_entidad, nombre: campos.entidad });
+    if (campos.documento_proveedor || campos.proveedor) {
+      refs.push({ tipo: "Empresa", nit: campos.documento_proveedor, nombre: campos.proveedor });
+    }
+    refs.push({ tipo: "Contrato", codigo: contratoKey(campos) ?? reg.id_fuente, nombre: campos.referencia });
+    if (reg.divipola_depto) refs.push({ tipo: "Departamento", codigo: reg.divipola_depto, nombre: campos.departamento });
+    return refs;
+  },
+  entidades(reg, campos) {
+    const refs = [];
+    if (campos.nit || campos.razon_social) refs.push({ tipo: "EntidadPublica", nit: campos.nit, nombre: campos.razon_social });
+    if (reg.divipola_depto) refs.push({ tipo: "Departamento", codigo: reg.divipola_depto, nombre: campos.departamento });
+    return refs;
+  },
 };
+
+// ---------------------------------------------------------------------------
+// Dedupe SECOP I / II / Integrado (bloqueante #8 del CATALOGO).
+// Fuente canónica: SECOP II electrónico (jbjy-vk9h); Integrado solo aporta lo
+// que no exista ya en la canónica. La llave opera sobre `campos` canónicos
+// (nit_entidad + referencia|proceso), independiente del nombre de columna de
+// cada dataset — el mapRow de cada fuente ya normalizó.
+// ---------------------------------------------------------------------------
+export const SECOP_PRECEDENCE = ["jbjy-vk9h", "tb27-zmix", "rpmr-utcd"];
+
+const normKey = (v) => (v == null ? "" : String(v).toUpperCase().replace(/[^A-Z0-9]/g, ""));
+
+/** Llave natural del contrato; null si no hay con qué agrupar (fila queda como única). */
+export function contratoKey(campos) {
+  const ref = normKey(campos.referencia) || normKey(campos.proceso);
+  const nit = normKey(campos.nit_entidad);
+  return ref ? `${nit}:${ref}` : null;
+}
+
+/** Recalcula la tabla de dedupe completa. Idempotente y barato (solo dominio contratación). */
+export function dedupeContratos(db) {
+  migrateEntities(db);
+  const rows = db.prepare(
+    "SELECT id_interno, id_fuente, campos FROM registros WHERE dominio='contratacion'"
+  ).all();
+
+  const grupos = new Map();
+  for (const r of rows) {
+    const llave = contratoKey(JSON.parse(r.campos)) ?? `__unica__:${r.id_interno}`;
+    if (!grupos.has(llave)) grupos.set(llave, []);
+    grupos.get(llave).push(r);
+  }
+
+  // id_interno = `${sourceId}:${idFuente}` (core-model) → la fuente se lee del prefijo
+  const rank = (idInterno) => {
+    const i = SECOP_PRECEDENCE.findIndex((id) => idInterno.startsWith(`${id}:`));
+    return i === -1 ? SECOP_PRECEDENCE.length : i;
+  };
+
+  const stats = { contratos: rows.length, grupos: grupos.size, duplicados: 0 };
+  db.exec("BEGIN");
+  try {
+    db.exec("DELETE FROM contrato_dedupe");
+    const ins = db.prepare(
+      "INSERT INTO contrato_dedupe (id_interno, llave, id_canonico, preferida) VALUES (?,?,?,?)"
+    );
+    for (const [llave, grupo] of grupos) {
+      grupo.sort((a, b) => rank(a.id_interno) - rank(b.id_interno) || a.id_interno.localeCompare(b.id_interno));
+      const canonico = grupo[0].id_interno;
+      for (const r of grupo) {
+        const preferida = r.id_interno === canonico ? 1 : 0;
+        if (!preferida) stats.duplicados++;
+        ins.run(r.id_interno, llave, canonico, preferida);
+      }
+    }
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+  return { resultado: "ok", ...stats };
+}
 
 /**
  * Corre resolución sobre los registros de un dominio (o todos si domain=null).
@@ -194,5 +283,8 @@ export function resolveDomain(db, domain = null) {
   }
   stats.entidades = db.prepare("SELECT COUNT(*) c FROM entidades").get().c;
   stats.revision = db.prepare("SELECT COUNT(*) c FROM entidad_revision WHERE resuelto=0").get().c;
+  if (domain === null || domain === "contratacion") {
+    stats.dedupe = dedupeContratos(db);
+  }
   return { resultado: "ok", ...stats };
 }

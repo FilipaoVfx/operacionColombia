@@ -795,6 +795,181 @@ function mountFuentes() {
 }
 
 // ---------------------------------------------------------------------------
+// vista: Socrata Explorer (M11) — discovery/preview/perfil/registro autoservicio.
+// No pasa por api()/caché de datos ingeridos: son llamadas en vivo al catálogo externo.
+// ---------------------------------------------------------------------------
+let explorerSel = null; // dataset seleccionado {id, nombre, dominio_origen}
+
+async function apiRaw(path, opts) {
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail || body.error || `HTTP ${r.status}`);
+  return body;
+}
+
+function mountExplorer() {
+  $("view").innerHTML = `
+    <div class="grid h-full grid-cols-1 gap-4 overflow-y-auto p-4 xl:grid-cols-2 xl:overflow-hidden">
+      <div class="flex min-h-0 flex-col gap-3">
+        <div class="flex items-center gap-2.5">
+          <span class="text-slate-400">${icon("search", "h-5 w-5")}</span>
+          <h2 class="text-[15px] font-semibold text-white">Socrata Explorer</h2>
+          <span class="rounded-full border border-ink-600 bg-ink-800 px-2 py-0.5 text-2xs text-slate-400">datos.gov.co</span>
+        </div>
+        <form id="explorerSearchForm" class="flex gap-2">
+          <input id="explorerQ" type="text" placeholder="Buscar dataset: minería, regalías, contratación…"
+                 class="flex-1 rounded-lg border border-ink-600 bg-ink-900 px-3 py-2 text-[13px] text-slate-200 placeholder:text-slate-500 focus:border-serie-a focus:outline-none" />
+          <button class="rounded-lg bg-serie-a px-3.5 py-2 text-[13px] font-medium text-ink-950 hover:opacity-90">Buscar</button>
+        </form>
+        <div id="explorerResults" class="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
+          <p class="p-3 text-2xs text-slate-500">Buscá un dataset del catálogo público de datos.gov.co para explorarlo, perfilar su calidad y registrarlo como fuente.</p>
+        </div>
+      </div>
+      <div id="explorerDetail" class="flex min-h-0 flex-col rounded-xl border border-ink-700 bg-ink-900">
+        <div class="grid h-full place-items-center p-8 text-center text-2xs text-slate-500">Elegí un dataset de la izquierda para explorarlo.</div>
+      </div>
+    </div>`;
+
+  $("explorerSearchForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const q = $("explorerQ").value.trim();
+    const box = $("explorerResults");
+    box.innerHTML = `<div class="skel h-14 w-full"></div><div class="skel h-14 w-full"></div><div class="skel h-14 w-full"></div>`;
+    try {
+      const { results } = await apiRaw(`/api/explorer/search?q=${encodeURIComponent(q)}&limit=25`);
+      renderExplorerResults(results);
+    } catch (err) {
+      box.innerHTML = `<p class="p-3 text-2xs text-red-400">Catálogo no disponible: ${esc(err.message)}</p>`;
+    }
+  });
+}
+
+function renderExplorerResults(results) {
+  const box = $("explorerResults");
+  if (!results.length) { box.innerHTML = `<p class="p-3 text-2xs text-slate-500">Sin resultados.</p>`; return; }
+  box.innerHTML = results.map((r) => `
+    <button data-id="${esc(r.id)}" data-nombre="${esc(r.nombre)}" data-dominio="${esc(r.dominio_origen)}"
+            class="explorerResultBtn block w-full rounded-lg border border-ink-700 bg-ink-850 px-3 py-2 text-left hover:border-serie-a">
+      <p class="truncate text-[13px] font-medium text-slate-200">${esc(r.nombre)}</p>
+      <p class="mt-0.5 line-clamp-2 text-2xs text-slate-500">${esc((r.descripcion || "sin descripción").slice(0, 160))}</p>
+      <p class="mt-1 flex items-center gap-2 text-2xs text-slate-600">
+        <span class="font-mono">${esc(r.id)}</span>${r.categoria ? `<span>· ${esc(r.categoria)}</span>` : ""}
+      </p>
+    </button>`).join("");
+  box.querySelectorAll(".explorerResultBtn").forEach((btn) => {
+    btn.addEventListener("click", () => mountExplorerDetail(btn.dataset.id, btn.dataset.nombre, btn.dataset.dominio));
+  });
+}
+
+async function mountExplorerDetail(id, nombreHint, dominioOrigen) {
+  explorerSel = { id, nombre: nombreHint, dominio_origen: dominioOrigen };
+  const panel = $("explorerDetail");
+  panel.innerHTML = `<div class="grid h-full place-items-center p-8"><div class="h-8 w-8 animate-spin rounded-full border-2 border-ink-600 border-t-serie-a"></div></div>`;
+  let prev;
+  try {
+    prev = await apiRaw(`/api/explorer/preview?id=${encodeURIComponent(id)}&domain=${encodeURIComponent(dominioOrigen)}&sample=15`);
+  } catch (err) {
+    panel.innerHTML = `<div class="p-4 text-2xs text-red-400">No se pudo cargar el dataset: ${esc(err.message)}</div>`;
+    return;
+  }
+  const cols = (prev.muestra[0] ? Object.keys(prev.muestra[0]).filter((k) => !k.startsWith(":")) : []).slice(0, 6);
+  panel.innerHTML = `
+    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-3.5">
+      <h3 class="text-[14px] font-semibold text-white">${esc(prev.nombre)}</h3>
+      <p class="mt-1 text-2xs text-slate-500">${fmt(prev.filas_totales)} filas · ${esc(prev.columnas.length)} columnas · licencia: ${esc(prev.licencia || "no especificada")}</p>
+      <p class="mt-2 line-clamp-3 text-2xs text-slate-400">${esc(prev.descripcion || "")}</p>
+
+      <div class="mt-3 overflow-x-auto rounded-lg border border-ink-700">
+        <table class="w-full text-left text-2xs">
+          <thead class="bg-ink-850 text-slate-500"><tr>${cols.map((c) => `<th class="px-2 py-1.5 font-medium">${esc(c)}</th>`).join("")}</tr></thead>
+          <tbody class="divide-y divide-ink-700/50">
+            ${prev.muestra.slice(0, 8).map((row) => `<tr>${cols.map((c) => `<td class="max-w-[140px] truncate px-2 py-1.5 text-slate-300">${esc(row[c])}</td>`).join("")}</tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mt-3 flex gap-2">
+        <button id="explorerProfileBtn" class="rounded-lg border border-ink-600 bg-ink-800 px-3 py-1.5 text-2xs text-slate-300 hover:bg-ink-700">Perfilar calidad (muestra 500)</button>
+      </div>
+      <div id="explorerProfileBox" class="mt-2"></div>
+
+      <h4 class="mb-1.5 mt-4 text-[13px] font-medium text-slate-300">Registrar como fuente</h4>
+      <form id="explorerRegisterForm" class="space-y-2 rounded-lg border border-ink-700 bg-ink-850 p-3">
+        <div class="grid grid-cols-2 gap-2">
+          <label class="text-2xs text-slate-500">Dominio interno
+            <input name="targetDomain" required placeholder="p.ej. mineria" class="mt-0.5 w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-[13px] text-slate-200" />
+          </label>
+          <label class="text-2xs text-slate-500">Nombre
+            <input name="nombre" value="${esc(prev.nombre)}" class="mt-0.5 w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-[13px] text-slate-200" />
+          </label>
+          <label class="text-2xs text-slate-500">Prioridad
+            <select name="priority" class="mt-0.5 w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-[13px] text-slate-200">
+              <option value="P1">P1</option><option value="P2" selected>P2</option><option value="P3">P3</option>
+            </select>
+          </label>
+          <label class="text-2xs text-slate-500">Frecuencia
+            <select name="schedule" class="mt-0.5 w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-[13px] text-slate-200">
+              <option value="diario">Diaria</option><option value="semanal">Semanal</option>
+              <option value="mensual" selected>Mensual</option><option value="anual">Anual</option>
+            </select>
+          </label>
+        </div>
+        <label class="block text-2xs text-slate-500">Filtro SoQL ($where, opcional)
+          <input name="where" placeholder="anio='2026'" class="mt-0.5 w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 font-mono text-[13px] text-slate-200" />
+        </label>
+        <button class="w-full rounded-lg bg-serie-a py-1.5 text-[13px] font-medium text-ink-950 hover:opacity-90">Registrar fuente</button>
+        <p id="explorerRegisterMsg" class="text-2xs"></p>
+      </form>
+    </div>`;
+
+  $("explorerProfileBtn").addEventListener("click", () => loadExplorerProfile(id, dominioOrigen));
+  $("explorerRegisterForm").addEventListener("submit", (e) => submitExplorerRegister(e, id, dominioOrigen, prev.licencia));
+}
+
+async function loadExplorerProfile(id, domain) {
+  const box = $("explorerProfileBox");
+  box.innerHTML = `<div class="skel h-24 w-full"></div>`;
+  try {
+    const p = await apiRaw(`/api/explorer/profile?id=${encodeURIComponent(id)}&domain=${encodeURIComponent(domain)}&sample=500`);
+    box.innerHTML = `
+      <p class="text-2xs text-slate-500">muestra ${fmt(p.muestra_size)} filas · duplicados en muestra: ${p.duplicados_en_muestra ?? "n/d"}</p>
+      <div class="mt-1.5 max-h-48 overflow-y-auto rounded-lg border border-ink-700">
+        <table class="w-full text-left text-2xs">
+          <thead class="sticky top-0 bg-ink-850 text-slate-500"><tr><th class="px-2 py-1.5">Columna</th><th class="px-2 py-1.5">% nulos</th><th class="px-2 py-1.5">Distintos</th><th class="px-2 py-1.5">Top valor</th></tr></thead>
+          <tbody class="divide-y divide-ink-700/50">
+            ${p.columnas.map((c) => `<tr><td class="px-2 py-1.5 font-mono text-slate-300">${esc(c.columna)}</td><td class="px-2 py-1.5">${c.nulos_pct}%</td><td class="px-2 py-1.5">${fmt(c.distintos)}</td><td class="max-w-[140px] truncate px-2 py-1.5 text-slate-400">${esc(c.top[0]?.valor ?? "—")}</td></tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`;
+  } catch (err) {
+    box.innerHTML = `<p class="text-2xs text-red-400">No se pudo perfilar: ${esc(err.message)}</p>`;
+  }
+}
+
+async function submitExplorerRegister(e, id, domain, licencia) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const msg = $("explorerRegisterMsg");
+  msg.textContent = "Registrando…";
+  msg.className = "text-2xs text-slate-500";
+  try {
+    await apiRaw("/api/explorer/register", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id, domain, targetDomain: fd.get("targetDomain"), nombre: fd.get("nombre"),
+        licencia, where: fd.get("where") || undefined,
+        priority: fd.get("priority"), schedule: fd.get("schedule"),
+      }),
+    });
+    msg.textContent = "Registrada — se ingerirá en el próximo tick del orquestador (M5), sin tocar código.";
+    msg.className = "text-2xs text-emerald-400";
+  } catch (err) {
+    msg.textContent = `Error: ${err.message}`;
+    msg.className = "text-2xs text-red-400";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // inspector (detalle + linaje, OKR O4)
 // ---------------------------------------------------------------------------
 function openInspector(rec) {

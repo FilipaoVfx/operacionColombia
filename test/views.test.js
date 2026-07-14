@@ -51,3 +51,38 @@ test("versionado: cada rebuild sube version (clave de caché)", () => {
   const v = viewsStatus(db).find((r) => r.view_name === "rm_resumen_dominio");
   assert.equal(v.version, 2);
 });
+
+test("rm_contratos_depto + rm_top_proveedores_depto + rm_entidades_depto agregan por dominio nuevo", () => {
+  const db = new DatabaseSync(":memory:");
+  migrate(db);
+  const store = new WriteStore(db);
+  const contratoSource = { id: "secop", domain: "contratacion", nombre: "SECOP", endpoint: "http://x", kind: "socrata" };
+  const entidadSource = { id: "chip", domain: "entidades", nombre: "CHIP", endpoint: "http://x", kind: "socrata" };
+  [
+    { proveedor: "ACME SAS", valor_contrato: 600000000, anio: 2026 },
+    { proveedor: "ACME SAS", valor_contrato: 900000000, anio: 2026 },
+    { proveedor: "OTRA SAS", valor_contrato: 500000000, anio: 2026 },
+  ].forEach((c, i) => store.upsert({
+    ...buildRecord({ source: contratoSource, idFuente: i, campos: c }),
+    divipola_depto: "05",
+  }));
+  store.upsert({
+    ...buildRecord({ source: entidadSource, idFuente: 0, campos: { razon_social: "ENTIDAD X" } }),
+    divipola_depto: "05",
+  });
+
+  buildViews(db, { domain: "contratacion" });
+  buildViews(db, { domain: "entidades" });
+
+  const contratos = db.prepare("SELECT contratos, valor_total FROM rm_contratos_depto WHERE cod_dpto='05'").get();
+  assert.equal(contratos.contratos, 3);
+  assert.equal(contratos.valor_total, 2000000000);
+
+  const top = db.prepare("SELECT proveedor, contratos, valor_total FROM rm_top_proveedores_depto WHERE cod_dpto='05' ORDER BY valor_total DESC").all();
+  assert.equal(top[0].proveedor, "ACME SAS");
+  assert.equal(top[0].contratos, 2);
+  assert.equal(top[0].valor_total, 1500000000);
+
+  const entidades = db.prepare("SELECT entidades FROM rm_entidades_depto WHERE cod_dpto='05'").get();
+  assert.equal(entidades.entidades, 1);
+});

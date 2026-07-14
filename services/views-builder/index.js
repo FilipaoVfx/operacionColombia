@@ -80,6 +80,40 @@ export const VIEWS = [
       GROUP BY divipola_depto, territorial
     `,
   },
+  {
+    name: "rm_contratos_depto",
+    domain: "contratacion",
+    sql: `
+      SELECT divipola_depto cod_dpto,
+             json_extract(campos,'$.anio') anio,
+             COUNT(*) contratos,
+             ROUND(SUM(json_extract(campos,'$.valor_contrato')), 0) valor_total
+      FROM registros WHERE dominio='contratacion'
+      GROUP BY divipola_depto, anio
+    `,
+  },
+  {
+    name: "rm_top_proveedores_depto",
+    domain: "contratacion",
+    sql: `
+      SELECT divipola_depto cod_dpto,
+             json_extract(campos,'$.proveedor') proveedor,
+             COUNT(*) contratos,
+             ROUND(SUM(json_extract(campos,'$.valor_contrato')), 0) valor_total
+      FROM registros
+      WHERE dominio='contratacion' AND json_extract(campos,'$.proveedor') IS NOT NULL
+      GROUP BY divipola_depto, proveedor
+    `,
+  },
+  {
+    name: "rm_entidades_depto",
+    domain: "entidades",
+    sql: `
+      SELECT divipola_depto cod_dpto, COUNT(*) entidades
+      FROM registros WHERE dominio='entidades'
+      GROUP BY divipola_depto
+    `,
+  },
 ];
 
 /**

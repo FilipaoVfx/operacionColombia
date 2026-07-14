@@ -148,6 +148,16 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     const registrosTotal = depto
       ? prep("SELECT COALESCE(SUM(registros),0) n FROM rm_registros_depto WHERE cod_dpto=?").get(depto).n
       : prep("SELECT COALESCE(SUM(registros),0) n FROM rm_resumen_dominio").get().n;
+    const contratos = prep(
+      `SELECT COALESCE(SUM(contratos),0) contratos, COALESCE(SUM(valor_total),0) valor_total FROM rm_contratos_depto ${dw}`
+    ).get(...da);
+    const topLimit = Math.min(parseInt(qp.get("top"), 10) || 5, 100);
+    const topProveedores = prep(`
+      SELECT proveedor, SUM(contratos) contratos, SUM(valor_total) valor_total
+      FROM rm_top_proveedores_depto ${dw}
+      GROUP BY proveedor ORDER BY valor_total DESC LIMIT ?
+    `).all(...da, topLimit);
+    const entidadesTotal = prep(`SELECT COALESCE(SUM(entidades),0) n FROM rm_entidades_depto ${dw}`).get(...da).n;
 
     return {
       depto,
@@ -160,6 +170,10 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       pib_ultimo: pibSerie.at(-1) ?? null,
       pib_serie: pibSerie,
       registros_total: registrosTotal,
+      contratos_total: contratos.contratos,
+      contratos_valor_total: contratos.valor_total,
+      top_proveedores: topProveedores,
+      entidades_total: entidadesTotal,
     };
   }
 

@@ -27,8 +27,9 @@ export function migrateSearch(db) {
 
 // label humano del hit: primer campo "nombre" disponible por dominio
 function labelOf(campos, idInterno) {
-  return campos.nom_mpio || campos.nombre_tramo
+  return campos.nom_mpio || campos.nombre_tramo || campos.razon_social
     || (campos.cultivo ? [campos.cultivo, campos.municipio, campos.anio].filter(Boolean).join(" · ") : null)
+    || (campos.proveedor ? [campos.proveedor, campos.entidad, campos.anio].filter(Boolean).join(" · ") : null)
     || [campos.actividad, campos.departamento, campos.anio].filter(Boolean).join(" · ")
     || idInterno;
 }

@@ -20,6 +20,8 @@ import {
   registerSource, listExplorerSources,
 } from "../../services/socrata-explorer/index.js";
 import { Metrics, budgetReport, createLogger } from "../../packages/observability/index.js";
+import { migrateGraph, vecinos, concentracion, graphStats } from "../../services/graph/index.js";
+import { ask } from "../../services/ai/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = join(__dirname, "..", "web");
@@ -29,6 +31,7 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
   migrateSearch(db);
   migrateGeo(db);
   migrateExplorer(db);
+  migrateGraph(db);
   buildGeoIndex(db); // incremental: solo geoms nuevos/cambiados desde el último build
   // read models faltantes (DB nueva) se construyen una vez al arrancar
   if (!db.prepare("SELECT COUNT(*) c FROM read_models").get().c) {
@@ -376,6 +379,37 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       // M14 — dashboard operativo: budget vs medido (API en vivo + ETL/freshness de la DB)
       if (path === "/api/status") {
         return sendJson(req, res, budgetReport(db, metrics));
+      }
+
+      // M12 — Graph API: vecindad multi-salto, concentración y stats del grafo
+      if (path === "/api/graph/vecinos") {
+        const id = qp.get("id");
+        if (!id) return sendJson(req, res, { error: "falta ?id=<id_entidad>" }, { status: 400 });
+        return sendCachedJson(req, res, cacheKey,
+          () => vecinos(db, id, { depth: Number(qp.get("depth")) || 1, limit: Number(qp.get("limit")) || 200 }),
+          { maxAge: 300 });
+      }
+      if (path === "/api/graph/concentracion") {
+        return sendCachedJson(req, res, cacheKey, () => concentracion(db, {
+          tipoEntidad: qp.get("tipo") || "Empresa",
+          tipoArista: qp.get("arista") || "adjudicado_a",
+          depto: qp.get("depto") && /^\d{2}$/.test(qp.get("depto")) ? qp.get("depto") : null,
+          limit: Math.min(Number(qp.get("limit")) || 10, 100),
+        }), { maxAge: 300 });
+      }
+      if (path === "/api/graph/stats") {
+        return sendCachedJson(req, res, cacheKey, () => graphStats(db), { maxAge: 300 });
+      }
+
+      // M13 — consulta NL con evidencia citada; sin API key degrada a solo-recuperación
+      if (path === "/api/ai/ask") {
+        const q = qp.get("q");
+        if (!q || !q.trim()) return sendJson(req, res, { error: "falta ?q=<pregunta>" }, { status: 400 });
+        try {
+          return sendJson(req, res, await ask(db, q.trim(), { limit: Math.min(Number(qp.get("limit")) || 8, 20) }));
+        } catch (e) {
+          return sendJson(req, res, { error: "ai no disponible", detail: String(e.message) }, { status: 502 });
+        }
       }
       if (path === "/api/meta") return sendCachedJson(req, res, cacheKey, () => handleMeta(), { maxAge: 300 });
       if (path === "/api/kpi") return sendCachedJson(req, res, cacheKey, () => handleKpi(qp), { maxAge: 300 });

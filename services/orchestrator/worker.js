@@ -7,6 +7,7 @@ import { buildViews } from "../views-builder/index.js";
 import { buildSearchIndex } from "../search-indexer/index.js";
 import { buildGeoIndex } from "../geo-indexer/index.js";
 import { resolveSource } from "../socrata-explorer/index.js";
+import { buildGraph } from "../graph/index.js";
 
 /** Handlers por tipo de job. Todos idempotentes: reejecutar no duplica estado. */
 export function createHandlers(db) {
@@ -18,6 +19,7 @@ export function createHandlers(db) {
       if (res.resultado === "ok" && (res.insertadas || res.actualizadas)) {
         queue.enqueue({ tipo: "views", payload: { domain: source.domain }, dedupeKey: `views:${source.domain}` });
         queue.enqueue({ tipo: "entity-res", payload: { domain: source.domain }, dedupeKey: `entity-res:${source.domain}` });
+        queue.enqueue({ tipo: "graph", payload: {}, dedupeKey: "graph" }); // tras entity-res (FIFO)
         queue.enqueue({ tipo: "search", payload: { domain: source.domain }, dedupeKey: `search:${source.domain}` });
         queue.enqueue({ tipo: "geo", payload: { domain: source.domain }, dedupeKey: `geo:${source.domain}` });
       }
@@ -34,6 +36,9 @@ export function createHandlers(db) {
     },
     async geo(payload) {
       return buildGeoIndex(db, payload?.domain ?? null);
+    },
+    async graph() {
+      return buildGraph(db);
     },
   };
 }

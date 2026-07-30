@@ -227,11 +227,19 @@ Para pasar de "datos apilados" a "datos cruzados":
 
 ## 12. Estado actual
 
-- ✅ **Piloto SIVU (dominio vial)** funcional: ETL desde INVIAS ArcGIS → modelo unificado →
-  API de consulta → panel (mapa + tabla + KPIs + búsqueda + exportación).
-- 🟡 Fuentes viales adicionales (datos.gov.co, ANI, ICDE, Bogotá) **identificadas**, no
-  integradas.
-- ⚪ Dominios 2–8 **en backlog**, pendientes del framework de verticales (F2).
+*(actualizado 2026-07-14 — detalle por módulo en [PLANNING.md](PLANNING.md) §7)*
+
+- ✅ **Plataforma multi-dominio operativa**: motor de conectores (Socrata + ArcGIS),
+  metadata/linaje/freshness, DIVIPOLA + normalización, storage CQRS, orquestador con
+  colas/scheduler/streaming, entity resolution con dedupe SECOP, vistas materializadas,
+  search FTS5, Read API con caché por versión, panel unificado, Socrata Explorer
+  (alta de fuentes autoservicio), knowledge graph y capa RAG con citas.
+- ✅ **Dominios con datos**: territorio (DIVIPOLA), economía (PIB), agro (EVA), vial
+  (INVIAS), contratación (SECOP II, corte >500M COP 2026), entidades (CHIP).
+- ✅ Observabilidad: `/api/status` compara budget §2.3 del PLANNING contra lo medido.
+- 🟡 Agentes de investigación multi-paso (M13) pendientes de casos de uso reales.
+- ⚪ Ampliaciones en backlog: más fuentes por dominio, vector search (ADR-006),
+  dominios P2/P3 del catálogo.
 
 ---
 

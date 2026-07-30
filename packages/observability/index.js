@@ -95,7 +95,10 @@ export function budgetReport(db, metrics) {
   ).all();
 
   const alertas = [];
-  const worst = (p) => Math.max(0, ...[...metrics.rutas.keys()].map((l) => metrics.percentile(l, p) ?? 0));
+  // rutas network-bound (catálogo Socrata en vivo, LLM) no aplican al budget de lectura local
+  const EXENTAS = new Set(["/api/explorer", "/api/ai"]);
+  const rutasBudget = [...metrics.rutas.keys()].filter((l) => !EXENTAS.has(l));
+  const worst = (p) => Math.max(0, ...rutasBudget.map((l) => metrics.percentile(l, p) ?? 0));
   if (api.total) {
     const p95 = worst(95), p99 = worst(99);
     if (p95 > BUDGET.p95_api_ms) alertas.push({ metrica: "p95_api_ms", medido: p95, umbral: BUDGET.p95_api_ms });

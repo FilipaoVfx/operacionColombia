@@ -321,7 +321,7 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M3.  **Habilita:** M8, M9, M6, M7.
 - **Entregables:** capa de persistencia con migraciones (`/infra/migrations`), write store + proyección a read store.
 - **Tareas:**
-  - [ ] Resolver **ADR-002/003/007** (SQLite vs Postgres vs DuckDB/Parquet; read model; histórico columnar).
+  - [x] Resolver **ADR-002/003/007** (SQLite vs Postgres vs DuckDB/Parquet; read model; histórico columnar).
   - [ ] Esquema de escritura (registro unificado + lineage) con **upsert idempotente** (`id_fuente`+`hash`).
   - [ ] Índices obligatorios (BACKLOG): municipio, depto, empresa, NIT, contrato, mineral, fecha, tipo + bbox espacial.
   - [ ] Proyección write → read (event/trigger) que alimenta read models (base de M8).
@@ -463,10 +463,10 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M6.  **Habilita:** M13, análisis avanzado.
 - **Entregables:** `/services/graph` + Graph API.
 - **Tareas:**
-  - [ ] Resolver **ADR-008** (store de grafo).
-  - [ ] Modelo de nodos (Empresa, Municipio, Contrato, Título, Proyecto…) y relaciones.
-  - [ ] Poblado desde entidades (M6) vía fan-out (M5).
-  - [ ] Consultas de grafo (vecindad, caminos, concentración).
+  - [x] Resolver **ADR-008** (store de grafo): nodos = `entidades` (M6), aristas SQL + CTE recursiva.
+  - [x] Modelo de nodos y relaciones: aristas tipadas por par de tipos (adjudicado_a, contratado_por, ubicado_en, opera_en, pertenece_a); pares sin semántica no generan arista.
+  - [x] Poblado desde entidades (M6) vía fan-out (M5): job `graph` tras `entity-res`; dedupe SECOP respetado (solo preferida=1 pesa).
+  - [x] Consultas de grafo: vecindad multi-salto (depth ≤ 3), concentración por depto, stats — `/api/graph/*`.
 - **Contrato expuesto:** Graph API.
 - **Aceptación:** resolver una consulta multi-salto de ejemplo del README (vía × concesión × peaje / empresa × contrato × conflicto).
 - **Pruebas:** correctitud de relaciones; latencia de consulta acotada.
@@ -479,10 +479,10 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M7, M12.  **Habilita:** producto diferenciado.
 - **Entregables:** `/services/ai` (RAG pipeline + agentes).
 - **Tareas:**
-  - [ ] RAG: retrieval híbrido (M7) + grafo (M12) → contexto citado.
-  - [ ] Respuestas **siempre con fuente** (coherente con principio OSINT; nada sin linaje).
-  - [ ] Agentes de investigación (multi-paso) sobre el corpus.
-  - [ ] Guardrails: no inventar; si no hay dato, decirlo.
+  - [x] RAG: retrieval híbrido FTS (M7) + expansión de grafo (M12) → contexto citado numerado.
+  - [x] Respuestas **siempre con fuente**: cada evidencia lleva `cita {fuente, url}`; el LLM cita [n]; sin API key degrada a solo-recuperación (evidencia sin redacción), nunca texto sin fuente.
+  - [ ] Agentes de investigación (multi-paso) sobre el corpus — fase siguiente (requiere casos de uso reales).
+  - [x] Guardrails: sin evidencia → `modo: sin-datos` (el LLM ni se invoca); cifras literales del contexto.
 - **Contrato expuesto:** endpoint de consulta NL.
 - **Aceptación:** respuesta cita fuentes reales del corpus; sin alucinación en set de prueba.
 - **Pruebas:** batería de preguntas con ground-truth; verificación de citas.
@@ -505,7 +505,7 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Objetivo:** caché en capas edge/CDN → API → search → DB (ard 7).
 - **Depende de:** M9.  **Habilita:** cumplir budget bajo carga.
 - **Tareas:**
-  - [ ] Cache edge/CDN (según ADR-001) con inmutabilidad + `ETag` — pendiente de despliegue edge (ADR-001).
+  - [x] Cache edge (según ADR-001): nginx micro-cache + single-flight desplegado (infra/DEPLOY.md); CDN externo diferido hasta que el tráfico lo exija.
   - [x] Cache de API y de search; colapso de peticiones idénticas (single-flight).
   - [x] Invalidación por versión de dataset/vista (M2/M8): caché y ETag clavados a la versión de datos, no TTL ciego.
 - **Aceptación:** cache hit edge > 95 %; "1000 buscan Cali → 1 consulta a la base".
@@ -622,17 +622,17 @@ interface Job {
 | M1 Connector Engine ⭐ | 1 | M0 | HECHO (C1 Socrata + C2 ArcGIS; CLI `npm run connectors`; C3/C4 stub) |
 | M2 Metadata/Lineage/Versioning/Freshness | 1 | M0, M1 | HECHO (registry + versionado esquema + skip por etag/hash + etl_runs) |
 | M3 DIVIPOLA + Normalización ⭐ | 1 | M1 | HECHO (1122 municipios; resolución por código/nombre+depto; 100% depto en economía) |
-| M4 Storage + CQRS | 1 | M3 | PARCIAL (write store `data/osint.db` con upsert idempotente; proyección read model pendiente → M8) |
+| M4 Storage + CQRS | 1 | M3 | HECHO (write store `data/osint.db` upsert idempotente; proyección write→read cubierta por fan-out M5 → vistas M8; ADR-002 marca umbral de migración a Postgres) |
 | M5 Orchestration (colas/scheduler/streaming) | 2 | M1, M4 | HECHO (cola SQL + scheduler + workers + streaming + fan-out) |
 | M6 Entity Resolution | 2 | M3, M4 | HECHO (2026-07-14: matching NIT/código/nombre + cola de revisión + dedupe SECOP por llave natural y precedencia de fuente + extractores contratación/entidades) |
 | M8 Materialized Views | 2 | M4 | HECHO (builder incremental + vistas versionadas) |
 | M9 Read API + Cache | 3 | M4, M8 | HECHO (endpoints + cursor + ETag/304 clavado a versión de datos) |
 | M7 Search (FTS+vector+híbrido) | 3 | M3, M4 | HECHO (FTS5 + facetas + autocompletado; vector/híbrido diferido a M13 — ADR-006) |
 | M10 Frontend unificado | 3 | M9 | HECHO (2026-07-08: rediseño shell — sidebar de vistas, command palette Ctrl K, inspector de linaje, deep-link por hash; pendiente validar budget: carga < 1.5 s, Lighthouse) |
-| M15 Caching | 3 | M9 | PARCIAL (cache API/search por versión + single-flight; edge/CDN pendiente de ADR-001) |
+| M15 Caching | 3 | M9 | HECHO (cache API/search por versión + single-flight; capa edge = nginx micro-cache desplegado según ADR-001 — ver infra/DEPLOY.md; CDN externo diferido hasta que el tráfico lo exija) |
 | M11 Socrata Explorer | 4 | M1, M2 | HECHO (2026-07-14: discovery + preview + profile + registro autoservicio en DB → ingesta vía M1/M5 sin tocar código; export json/csv) |
-| M12 Knowledge Graph | 4 | M6 | PENDIENTE |
-| M13 IA / RAG / Agentes | 4 | M7, M12 | PENDIENTE |
+| M12 Knowledge Graph | 4 | M6 | HECHO (2026-07-14: ADR-008 aceptado — aristas SQL tipadas por co-ocurrencia, CTE recursiva depth≤3, job `graph` en fan-out, `/api/graph/*`) |
+| M13 IA / RAG / Agentes | 4 | M7, M12 | HECHO parcial (2026-07-14: RAG con retrieval FTS+grafo, citas obligatorias, guardrails, `/api/ai/ask`; agentes multi-paso pendientes de casos de uso) |
 | M14 Observabilidad | transversal | M1 | HECHO (2026-07-14: logger JSON + Metrics por ruta + `/api/status` budget-vs-medido con alertas; ETL ya medía en `etl_runs`) |
 
 **Primer paso concreto para el agente:** cerrar bloqueantes de gobernanza/legal/token

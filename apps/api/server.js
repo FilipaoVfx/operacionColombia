@@ -351,7 +351,7 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     return chunks.length ? JSON.parse(Buffer.concat(chunks)) : {};
   }
 
-  const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".ico": "image/x-icon" };
+  const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".png": "image/png", ".map": "application/json; charset=utf-8" };
   async function serveStatic(req, res, pathname) {
     const rel = pathname === "/" ? "/index.html" : pathname;
     const file = join(webDir, normalize(rel).replace(/^(\.\.[/\\])+/, ""));

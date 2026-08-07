@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Operación Colombia · Plataforma OSINT</title>
 
-  <!-- Tailwind (CDN, sin build) -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tailwind (vendorizado localmente, sin build) -->
+  <script src="/vendor/tailwindcss/tailwindcss.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -21,11 +21,11 @@
     };
   </script>
 
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Chart.js -->
-  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <!-- Leaflet (vendorizado localmente) -->
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+  <script defer src="/vendor/leaflet/leaflet.js"></script>
+  <!-- Chart.js (vendorizado localmente) -->
+  <script defer src="/vendor/chartjs/chart.umd.js"></script>
   <script type="module" src="app.js"></script>
 
   <style>

@@ -38,12 +38,10 @@ const DOM_ICON = { territorio: "pin", vial: "route", economia: "chart", agro: "l
 // secciones del roadmap (BACKLOG_MEJORAS_OSINT.md) sin conector/API aún: nav visible,
 // vista placeholder honesta — sin inventar cifras.
 const PLACEHOLDER_META = {
-  kg: { label: "Knowledge Graph", icon: "graph", note: "Grafo de relaciones entre entidades — backlog A2." },
   mineria: { label: "Minería", icon: "pickaxe", note: "Requiere conector ANM (catastro minero / títulos) — no implementado." },
   conflicto: { label: "Conflicto", icon: "shield", note: "Fuente de datos de conflicto aún no conectada." },
   regalias: { label: "Regalías", icon: "coins", note: "Requiere conector SICODIS/regalías — no implementado." },
   dashboards: { label: "Dashboards", icon: "dashboard", note: "Dashboards personalizables — backlog." },
-  logs: { label: "Logs & Alertas", icon: "alert", note: "Monitoreo operacional (logs, alertas) — backlog." },
   config: { label: "Configuración", icon: "settings", note: "Configuración de usuario/sistema — pendiente." },
 };
 
@@ -94,7 +92,7 @@ const NAV = [
     section: "Explorar",
     items: [
       { id: "entidades", label: DOM_LABEL.entidades, icon: DOM_ICON.entidades },
-      { id: "kg", label: PLACEHOLDER_META.kg.label, icon: PLACEHOLDER_META.kg.icon },
+      { id: "kg", label: "Knowledge Graph", icon: "graph" },
       { id: "mapa", label: "Mapa", icon: "map" },
       { id: "territorio", label: DOM_LABEL.territorio, icon: DOM_ICON.territorio },
       { id: "contratacion", label: DOM_LABEL.contratacion, icon: DOM_ICON.contratacion },
@@ -119,7 +117,7 @@ const NAV = [
     section: "Monitoreo",
     items: [
       { id: "dashboards", label: PLACEHOLDER_META.dashboards.label, icon: PLACEHOLDER_META.dashboards.icon },
-      { id: "logs", label: PLACEHOLDER_META.logs.label, icon: PLACEHOLDER_META.logs.icon },
+      { id: "logs", label: "Logs & Alertas", icon: "alert" },
     ],
   },
   { section: "Sistema", items: [{ id: "config", label: PLACEHOLDER_META.config.label, icon: PLACEHOLDER_META.config.icon }] },
@@ -132,6 +130,8 @@ const VIEWS = {
   ...Object.fromEntries(REAL_DOMAINS.map((d) => [d, { title: DOM_LABEL[d], mount: () => mountDomain(d) }])),
   fuentes: { title: "Datasets", mount: mountFuentes },
   explorer: { title: "Explorer", mount: mountExplorer },
+  kg: { title: "Knowledge Graph", mount: mountKg },
+  logs: { title: "Logs & Alertas", mount: mountLogs },
   mapa: { title: "Mapa", mount: mountMapaFull, unmount: unmountMapaFull },
   conectores: { title: "Conectores", mount: mountConectores },
   etl: { title: "ETL Center", mount: mountEtl },
@@ -171,7 +171,9 @@ function route(viewId) {
   history.replaceState(null, "", viewId === "overview" ? "#" : `#${viewId}`);
   renderNav();
   renderBreadcrumb();
-  VIEWS[viewId].mount();
+  // los mounts async (kg, logs, proveedores, explorer) rechazan si la API falla:
+  // se reporta en la vista en vez de quedar como unhandled rejection en consola.
+  VIEWS[viewId].mount()?.catch?.(viewError);
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +455,253 @@ function mountEtl() {
           </tbody>
         </table>
       </div>
+    </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// vista: Knowledge Graph (M12) — concentración por tipo de relación + vecindad
+// del nodo elegido. El grafo es derivado (co-ocurrencia tipada, ADR-008): cada
+// arista trae `muestra`, un id_interno que abre el linaje del registro que la evidencia.
+// ---------------------------------------------------------------------------
+
+// dst de cada regla de EDGE_RULES: qué tipo de entidad rankea `concentracion`.
+const ARISTA_DST = {
+  adjudicado_a: "Empresa",
+  contratado_por: "EntidadPublica",
+  ubicado_en: "Departamento",
+  opera_en: "Departamento",
+  pertenece_a: "Departamento",
+};
+const ARISTA_LABEL = {
+  adjudicado_a: "Empresas por contratos adjudicados",
+  contratado_por: "Entidades por contratos suscritos",
+  ubicado_en: "Departamentos por registros ubicados",
+  opera_en: "Departamentos por empresas que operan",
+  pertenece_a: "Departamentos por municipios",
+};
+
+async function mountKg() {
+  const stats = await api("/api/graph/stats");
+  const tipos = stats.por_tipo.map((t) => t.tipo);
+  const inicial = tipos.includes("adjudicado_a") ? "adjudicado_a" : tipos[0];
+
+  $("view").innerHTML = `
+    <div class="p-4">
+      <div class="mb-3 flex flex-wrap items-center gap-2.5">
+        <span class="text-slate-400">${icon("graph", "h-5 w-5")}</span>
+        <h2 class="text-[15px] font-semibold text-white">Knowledge Graph</h2>
+        <span class="rounded-full border border-ink-600 bg-ink-800 px-2 py-0.5 text-2xs text-slate-400">${fmt(stats.nodos)} nodos · ${fmt(stats.aristas)} aristas</span>
+        <span class="text-2xs text-slate-500">relaciones derivadas por co-ocurrencia tipada (ADR-008)</span>
+      </div>
+
+      <div class="mb-4 flex flex-wrap gap-1.5">
+        ${stats.por_tipo.map((t) => `
+          <span class="rounded-lg border border-ink-700 bg-ink-900 px-2.5 py-1 text-2xs text-slate-400">
+            <span class="font-mono text-slate-300">${esc(t.tipo)}</span> · ${fmt(t.n)}
+          </span>`).join("")}
+      </div>
+
+      <div class="grid gap-4 xl:grid-cols-2">
+        <div class="flex flex-col rounded-xl border border-ink-700 bg-ink-900">
+          <div class="flex items-center gap-2 border-b border-ink-700/70 px-3.5 py-2 text-[13px]">
+            <span class="font-medium text-slate-200">Concentración</span>
+            <select id="kgArista" class="ml-auto rounded-lg border border-ink-600 bg-ink-800 px-2 py-1 text-2xs text-slate-300 outline-none hover:border-slate-500">
+              ${tipos.map((t) => `<option value="${esc(t)}" ${t === inicial ? "selected" : ""}>${esc(t)}</option>`).join("")}
+            </select>
+          </div>
+          <p id="kgConcLabel" class="px-3.5 pt-2 text-2xs text-slate-500"></p>
+          <div id="kgConc" class="min-h-[240px] flex-1 space-y-1 p-3">
+            ${Array.from({ length: 6 }, () => `<div class="skel h-7 w-full"></div>`).join("")}
+          </div>
+        </div>
+
+        <div class="flex flex-col rounded-xl border border-ink-700 bg-ink-900">
+          <div class="flex items-center gap-2 border-b border-ink-700/70 px-3.5 py-2 text-[13px]">
+            <span class="font-medium text-slate-200">Vecindad</span>
+            <span id="kgVecTitulo" class="ml-auto truncate text-2xs text-slate-500">elegí una entidad</span>
+          </div>
+          <div id="kgVec" class="min-h-[240px] flex-1 overflow-y-auto p-3 text-[13px]">
+            <p class="p-2 text-2xs text-slate-500">Clic en una fila de concentración para ver sus relaciones directas.</p>
+          </div>
+        </div>
+      </div>
+      <p class="mt-2 text-2xs text-slate-500">Cada relación enlaza al registro que la evidencia (linaje, OKR O4).</p>
+    </div>`;
+
+  $("kgArista").addEventListener("change", () => loadConcentracion().catch(viewError));
+  $("kgConc").addEventListener("click", (e) => {
+    const row = e.target.closest("button[data-ent]");
+    if (row) loadVecindad(row.dataset.ent, row.dataset.nombre).catch(viewError);
+  });
+  $("kgVec").addEventListener("click", async (e) => {
+    const a = e.target.closest("a[data-linaje]");
+    if (!a) return;
+    e.preventDefault();
+    openInspector(await api(`/api/registros/${encodeURIComponent(a.dataset.linaje)}`));
+  });
+  await loadConcentracion();
+}
+
+async function loadConcentracion() {
+  const arista = $("kgArista").value;
+  const d = state.depto ? `&depto=${state.depto}` : "";
+  const rows = await api(`/api/graph/concentracion?arista=${encodeURIComponent(arista)}&tipo=${encodeURIComponent(ARISTA_DST[arista] ?? "Empresa")}&limit=12${d}`);
+  if (!$("kgConc")) return;
+  $("kgConcLabel").textContent = ARISTA_LABEL[arista] ?? arista;
+  const max = Math.max(1, ...rows.map((r) => r.relaciones));
+  $("kgConc").innerHTML = rows.map((r, i) => `
+    <button data-ent="${esc(r.id_entidad)}" data-nombre="${esc(r.nombre_canonico)}"
+      class="relative block w-full overflow-hidden rounded-lg border border-ink-700 bg-ink-850 px-2.5 py-1.5 text-left hover:border-slate-600">
+      <span class="absolute inset-y-0 left-0 bg-serie-a/15" style="width:${Math.round(100 * r.relaciones / max)}%"></span>
+      <span class="relative flex items-center gap-2 text-[13px]">
+        <span class="w-4 shrink-0 text-2xs text-slate-500">${i + 1}</span>
+        <span class="min-w-0 flex-1 truncate text-slate-200">${esc(r.nombre_canonico)}</span>
+        <span class="shrink-0 text-2xs text-slate-400">${fmt(r.relaciones)}</span>
+      </span>
+    </button>`).join("") || `<p class="p-2 text-2xs text-slate-500">Sin relaciones de este tipo para el filtro actual.</p>`;
+}
+
+async function loadVecindad(idEntidad, nombre) {
+  $("kgVecTitulo").textContent = nombre;
+  $("kgVec").innerHTML = `<div class="skel h-24 w-full"></div>`;
+  const { nodos, aristas } = await api(`/api/graph/vecinos?id=${encodeURIComponent(idEntidad)}&depth=1&limit=60`);
+  if (!$("kgVec")) return;
+  // aristas incidentes al nodo raíz: son las que tienen evidencia navegable
+  const incidentes = aristas.filter((a) => a.src === idEntidad || a.dst === idEntidad);
+  const nombrePorId = Object.fromEntries(nodos.map((n) => [n.id_entidad, n]));
+  const porTipo = {};
+  for (const a of incidentes) {
+    const otro = a.src === idEntidad ? a.dst : a.src;
+    (porTipo[a.tipo] ??= []).push({ ...a, otro });
+  }
+  const bloques = Object.entries(porTipo).map(([tipo, list]) => `
+    <p class="mb-1 mt-3 text-2xs uppercase tracking-wider text-slate-500">${esc(tipo)} · ${fmt(list.length)}</p>
+    <div class="space-y-1">
+      ${list.slice(0, 25).map((a) => `
+        <div class="flex items-center gap-2 rounded-lg border border-ink-700 bg-ink-850 px-2.5 py-1.5">
+          <span class="shrink-0 rounded px-1.5 text-2xs text-slate-500">${esc(nombrePorId[a.otro]?.tipo ?? "?")}</span>
+          <span class="min-w-0 flex-1 truncate text-slate-200">${esc(nombrePorId[a.otro]?.nombre_canonico ?? a.otro)}</span>
+          ${a.muestra ? `<a href="#" data-linaje="${esc(a.muestra)}" class="shrink-0 text-2xs text-serie-a hover:underline">linaje</a>` : ""}
+        </div>`).join("")}
+    </div>`).join("");
+  $("kgVec").innerHTML = bloques
+    || `<p class="p-2 text-2xs text-slate-500">Sin relaciones directas.</p>`;
+}
+
+// ---------------------------------------------------------------------------
+// vista: Logs & Alertas (M14) — /api/status: budget §2.3 contra lo medido.
+// Las métricas de API son del proceso vivo (in-memory); ETL y freshness vienen de la DB.
+// ---------------------------------------------------------------------------
+async function mountLogs() {
+  const s = await api("/api/status");
+  const rutas = Object.entries(s.api.por_ruta ?? {});
+
+  // dir="max": la métrica no debe superar el umbral (latencia, errores).
+  // dir="min": debe alcanzarlo (cache hit). El backend solo alerta sobre las "max"
+  // — el cache hit del budget es de edge y aquí se mide el de API, así que se
+  // muestra como informativo y no contradice el "sin alertas" del encabezado.
+  const filaBudget = (label, medido, umbral, unidad, dir) => {
+    const cumple = dir === "min" ? medido >= umbral : medido <= umbral;
+    const estado = medido === null
+      ? `<span class="text-2xs text-slate-600">sin muestra</span>`
+      : cumple
+        ? `<span class="rounded-full bg-emerald-950 px-2 py-0.5 text-2xs text-emerald-400">OK</span>`
+        : dir === "min"
+          ? `<span class="rounded-full bg-amber-950 px-2 py-0.5 text-2xs text-amber-400">BAJO</span>`
+          : `<span class="rounded-full bg-red-950 px-2 py-0.5 text-2xs text-red-400">EXCEDE</span>`;
+    return `
+    <tr class="hover:bg-ink-700/40">
+      <td class="px-3 py-2 text-slate-200">${esc(label)}</td>
+      <td class="px-3 py-2 font-mono text-slate-300">${medido === null ? "—" : fmt(medido)}${unidad}</td>
+      <td class="px-3 py-2 font-mono text-2xs text-slate-500">${dir === "min" ? "≥" : "≤"} ${fmt(umbral)}${unidad}</td>
+      <td class="px-3 py-2">${estado}</td>
+    </tr>`;
+  };
+
+  const peorP95 = rutas.length ? Math.max(...rutas.map(([, r]) => r.p95_ms ?? 0)) : null;
+  const peorP99 = rutas.length ? Math.max(...rutas.map(([, r]) => r.p99_ms ?? 0)) : null;
+
+  $("view").innerHTML = `
+    <div class="p-4">
+      <div class="mb-3 flex flex-wrap items-center gap-2.5">
+        <span class="text-slate-400">${icon("alert", "h-5 w-5")}</span>
+        <h2 class="text-[15px] font-semibold text-white">Logs & Alertas</h2>
+        <span class="rounded-full px-2 py-0.5 text-2xs ${s.ok ? "bg-emerald-950 text-emerald-400" : "bg-red-950 text-red-400"}">
+          ${s.ok ? "sin alertas" : `${s.alertas.length} alerta(s)`}
+        </span>
+        <span class="text-2xs text-slate-500">métricas del proceso desde ${esc(relTime(s.api.desde))} · ${fmt(s.api.total)} peticiones</span>
+      </div>
+
+      ${s.alertas.length ? `
+        <div class="mb-4 space-y-1.5">
+          ${s.alertas.map((a) => `
+            <div class="flex items-center gap-2.5 rounded-lg border border-red-900 bg-red-950/40 px-3 py-2 text-[13px] text-red-300">
+              <span class="shrink-0">${icon("alert", "h-3.5 w-3.5")}</span>
+              <span class="font-mono text-2xs">${esc(a.metrica)}</span>
+              ${a.fuente ? `<span class="text-2xs text-red-400/80">${esc(a.fuente)}</span>` : ""}
+              ${a.medido !== undefined ? `<span class="ml-auto text-2xs">medido ${fmt(a.medido)} · umbral ${fmt(a.umbral)}</span>` : ""}
+            </div>`).join("")}
+        </div>` : ""}
+
+      <h3 class="mb-2 text-[13px] font-medium text-slate-300">Performance budget (PLANNING §2.3)</h3>
+      <div class="mb-5 overflow-hidden rounded-xl border border-ink-700 bg-ink-900">
+        <table class="w-full text-left text-[13px]">
+          <thead class="border-b border-ink-700 bg-ink-850 text-2xs uppercase tracking-wider text-slate-500">
+            <tr><th class="px-3 py-2">Métrica</th><th class="px-3 py-2">Medido</th><th class="px-3 py-2">Umbral</th><th class="px-3 py-2">Estado</th></tr>
+          </thead>
+          <tbody class="divide-y divide-ink-700/50">
+            ${filaBudget("P95 API", peorP95, s.budget.p95_api_ms, " ms", "max")}
+            ${filaBudget("P99 API", peorP99, s.budget.p99_api_ms, " ms", "max")}
+            ${filaBudget("Error rate", s.api.total ? s.api.error_rate_pct : null, s.budget.error_rate_pct, " %", "max")}
+            ${filaBudget("Cache hit (API)", s.api.total ? s.api.cache_hit_pct : null, s.budget.cache_hit_pct, " %", "min")}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="mb-2 text-[13px] font-medium text-slate-300">Latencia por ruta</h3>
+      <div class="mb-5 overflow-hidden rounded-xl border border-ink-700 bg-ink-900">
+        <table class="w-full text-left text-[13px]">
+          <thead class="border-b border-ink-700 bg-ink-850 text-2xs uppercase tracking-wider text-slate-500">
+            <tr><th class="px-3 py-2">Ruta</th><th class="px-3 py-2">N</th><th class="px-3 py-2">p50</th><th class="px-3 py-2">p95</th><th class="px-3 py-2">p99</th><th class="px-3 py-2">Errores</th><th class="px-3 py-2">Cache hits</th></tr>
+          </thead>
+          <tbody class="divide-y divide-ink-700/50">
+            ${rutas.map(([ruta, r]) => `
+              <tr class="hover:bg-ink-700/40">
+                <td class="px-3 py-2 font-mono text-2xs text-slate-300">${esc(ruta)}</td>
+                <td class="px-3 py-2">${fmt(r.n)}</td>
+                <td class="px-3 py-2">${fmt(r.p50_ms)} ms</td>
+                <td class="px-3 py-2 ${r.p95_ms > s.budget.p95_api_ms ? "text-red-400" : ""}">${fmt(r.p95_ms)} ms</td>
+                <td class="px-3 py-2 ${r.p99_ms > s.budget.p99_api_ms ? "text-red-400" : ""}">${fmt(r.p99_ms)} ms</td>
+                <td class="px-3 py-2 ${r.errores ? "text-red-400" : "text-slate-500"}">${fmt(r.errores)}</td>
+                <td class="px-3 py-2 text-slate-400">${fmt(r.cache_hits)}</td>
+              </tr>`).join("") || `<tr><td colspan="7" class="px-3 py-6 text-center text-slate-500">Sin peticiones medidas todavía.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="mb-2 text-[13px] font-medium text-slate-300">Corridas ETL y frescura por fuente</h3>
+      <div class="overflow-hidden rounded-xl border border-ink-700 bg-ink-900">
+        <table class="w-full text-left text-[13px]">
+          <thead class="border-b border-ink-700 bg-ink-850 text-2xs uppercase tracking-wider text-slate-500">
+            <tr><th class="px-3 py-2">Fuente</th><th class="px-3 py-2">Filas</th><th class="px-3 py-2">Duración</th><th class="px-3 py-2">Resultado</th><th class="px-3 py-2">Último chequeo</th><th class="px-3 py-2">Estado</th></tr>
+          </thead>
+          <tbody class="divide-y divide-ink-700/50">
+            ${s.etl.map((r) => {
+              const f = s.freshness.find((x) => x.source_id === r.source_id);
+              return `
+              <tr class="hover:bg-ink-700/40">
+                <td class="px-3 py-2 font-mono text-2xs text-slate-300">${esc(r.source_id)}</td>
+                <td class="px-3 py-2">${fmt(r.filas)}</td>
+                <td class="px-3 py-2 ${r.duracion_min > s.budget.etl_incremental_min ? "text-red-400" : ""}">${r.duracion_min === null ? "—" : `${fmt(r.duracion_min)} min`}</td>
+                <td class="px-3 py-2"><span class="rounded-full px-2 py-0.5 text-2xs ${r.resultado === "ok" ? "bg-emerald-950 text-emerald-400" : "bg-red-950 text-red-400"}">${esc(r.resultado)}</span></td>
+                <td class="px-3 py-2 text-2xs text-slate-500">${esc(relTime(f?.last_checked))}</td>
+                <td class="px-3 py-2 text-2xs text-slate-400">${esc(f?.estado ?? "—")}</td>
+              </tr>`;
+            }).join("") || `<tr><td colspan="6" class="px-3 py-6 text-center text-slate-500">Sin corridas registradas.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-2 text-2xs text-slate-500">Las métricas de API son del proceso en curso: reinician al reiniciar el servicio. El budget de cache hit es de edge (§2.3); aquí se mide el caché de la API, por eso es informativo y no dispara alerta.</p>
     </div>`;
 }
 

@@ -8,9 +8,10 @@
     "node": ">=22.5.0"
   },
   "scripts": {
+    "start": "node --experimental-sqlite apps/api/server.js",
+    "dev": "node --experimental-sqlite --watch apps/api/server.js",
+    "start:piloto": "node --experimental-sqlite src/server.js",
     "ingest": "node --experimental-sqlite src/ingest.js",
-    "start": "node --experimental-sqlite src/server.js",
-    "dev": "node --experimental-sqlite --watch src/server.js",
     "test": "node --test \"test/**/*.test.js\"",
     "connectors": "node services/connectors/cli.js",
     "etl": "node services/connectors/cli.js run --all",

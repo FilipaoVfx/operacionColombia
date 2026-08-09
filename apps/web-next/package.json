@@ -12,6 +12,10 @@
     "@ark-ui/react": "^5.38.1",
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-table": "^9.1.2",
+    "chart.js": "^4.5.1",
+    "chartjs-chart-matrix": "^3.0.5",
+    "chartjs-chart-sankey": "^0.15.0",
+    "chartjs-chart-treemap": "^4.2.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "wouter": "^3.10.0"

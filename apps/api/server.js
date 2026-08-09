@@ -374,11 +374,12 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       const cacheKey = path + url.search;
 
       if (path === "/api/health") {
-        return sendJson(req, res, { ok: true, version_datos: dataVersion() });
+        return sendJson(req, res, { ok: true, version_datos: dataVersion() }, { cache: 10 });
       }
       // M14 — dashboard operativo: budget vs medido (API en vivo + ETL/freshness de la DB)
+      // M15 — cacheable 30s: el edge (nginx) colapsa ráfagas del panel sin ocultar degradación.
       if (path === "/api/status") {
-        return sendJson(req, res, budgetReport(db, metrics));
+        return sendJson(req, res, budgetReport(db, metrics), { cache: 30 });
       }
 
       // M12 — Graph API: vecindad multi-salto, concentración y stats del grafo
@@ -423,28 +424,28 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
             q: qp.get("q") || undefined, category: qp.get("category") || undefined,
             domain: qp.get("domain") || undefined, limit: qp.get("limit") ? Number(qp.get("limit")) : undefined,
           });
-          return sendJson(req, res, { results });
+          return sendJson(req, res, { results }, { cache: 300 });
         } catch (e) { return sendJson(req, res, { error: "catálogo no disponible", detail: String(e.message) }, { status: 502 }); }
       }
       if (path === "/api/explorer/preview") {
         if (!qp.get("id")) return sendJson(req, res, { error: "falta ?id=" }, { status: 400 });
         try {
           const out = await previewDataset(qp.get("id"), { domain: qp.get("domain") || undefined, sample: qp.get("sample") ? Number(qp.get("sample")) : undefined });
-          return sendJson(req, res, out);
+          return sendJson(req, res, out, { cache: 300 });
         } catch (e) { return sendJson(req, res, { error: "dataset no disponible", detail: String(e.message) }, { status: 502 }); }
       }
       if (path === "/api/explorer/profile") {
         if (!qp.get("id")) return sendJson(req, res, { error: "falta ?id=" }, { status: 400 });
         try {
           const out = await profileDataset(qp.get("id"), { domain: qp.get("domain") || undefined, sample: qp.get("sample") ? Number(qp.get("sample")) : undefined });
-          return sendJson(req, res, out);
+          return sendJson(req, res, out, { cache: 300 });
         } catch (e) { return sendJson(req, res, { error: "dataset no disponible", detail: String(e.message) }, { status: 502 }); }
       }
       if (path === "/api/explorer/sources") {
         const registradas = listExplorerSources(db).map((s) => ({ id: s.id, nombre: s.nombre, domain: s.domain, priority: s.priority, schedule: s.schedule }));
         const meta = db.prepare("SELECT source_id, filas, estado, last_checked FROM dataset_meta").all();
         const metaById = Object.fromEntries(meta.map((m) => [m.source_id, m]));
-        return sendJson(req, res, { fuentes: registradas.map((s) => ({ ...s, ingesta: metaById[s.id] ?? null })) });
+        return sendJson(req, res, { fuentes: registradas.map((s) => ({ ...s, ingesta: metaById[s.id] ?? null })) }, { cache: 30 });
       }
       if (path === "/api/explorer/register" && req.method === "POST") {
         try {

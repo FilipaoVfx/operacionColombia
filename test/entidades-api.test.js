@@ -73,6 +73,32 @@ test("listado de entidades: agrega registros, fuentes y territorios reales", asy
   assert.equal(emp.territorios[1].cod, "27");
 });
 
+test("faceta por tipo: composición real del catálogo, sin filtrarse a sí misma", async () => {
+  const todo = await get("/api/entidades");
+  const tipos = Object.fromEntries(todo.facetas.tipo.map((t) => [t.tipo, t.n]));
+  assert.equal(tipos.Empresa, 1);
+  assert.equal(tipos.EntidadPublica, 1);
+  assert.equal(tipos.Contrato, 3, "3 contratos distintos");
+  assert.ok(tipos.Departamento >= 2);
+
+  // al filtrar por un tipo, la faceta sigue mostrando los demás (si no, no se podría navegar)
+  const soloEmpresa = await get("/api/entidades?tipo=Empresa");
+  assert.equal(soloEmpresa.items.length, 1);
+  assert.deepEqual(
+    soloEmpresa.facetas.tipo.map((t) => t.tipo).sort(),
+    todo.facetas.tipo.map((t) => t.tipo).sort(),
+    "la faceta de tipo no se acota con el filtro de tipo",
+  );
+
+  // pero sí respeta los otros filtros
+  const enChoco = await get("/api/entidades?depto=27");
+  assert.ok(enChoco.facetas.tipo.every((t) => t.n > 0));
+  assert.ok(
+    enChoco.facetas.tipo.find((t) => t.tipo === "Contrato").n < tipos.Contrato,
+    "el filtro de departamento sí achica la faceta",
+  );
+});
+
 test("filtro por departamento acota a entidades con registros allí", async () => {
   const choco = await get("/api/entidades?tipo=Empresa&depto=27");
   assert.equal(choco.items.length, 1);

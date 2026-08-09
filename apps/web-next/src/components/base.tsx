@@ -103,20 +103,23 @@ export function Vacio({ titulo, detalle, accion }: { titulo: string; detalle?: s
 
 export function Error_({ error, contexto }: { error: unknown; contexto?: string }) {
   const api = error instanceof ApiError ? error : null;
-  const esRed = !api;
+  // Un 502/503/504 detrás de un proxy significa lo mismo que no poder abrir la
+  // conexión: el backend no está atendiendo. Se trata igual para que la ayuda
+  // accionable aparezca en el caso que más ocurre.
+  const backendCaido = !api || [502, 503, 504].includes(api.status);
+  const detalle = api && api.message !== `HTTP ${api.status}` ? api.message : null;
+
   return (
     <div className="m-4 rounded-md border border-error/30 bg-error-soft px-4 py-3">
       <p className="text-sm font-medium text-error">
-        {esRed ? "No se pudo contactar la API" : `Error ${api.status}`}
+        {backendCaido ? "La API no está respondiendo" : `Error ${api.status}`}
         {contexto ? ` · ${contexto}` : ""}
       </p>
-      <p className="mt-0.5 text-xs text-ink-muted">
-        {error instanceof Error ? error.message : String(error)}
-      </p>
-      {esRed ? (
+      {detalle ? <p className="mt-0.5 text-xs text-ink-muted">{detalle}</p> : null}
+      {backendCaido ? (
         <p className="mt-1.5 text-2xs text-ink-muted">
-          Verificá que el backend esté corriendo (<code className="font-mono">npm start</code>) y que haya
-          datos ingeridos (<code className="font-mono">npm run etl</code>).
+          Verificá que el servicio esté arriba (<code className="font-mono">npm start</code>) y que
+          haya datos ingeridos (<code className="font-mono">node services/orchestrator/cli.js tick</code>).
         </p>
       ) : null}
     </div>

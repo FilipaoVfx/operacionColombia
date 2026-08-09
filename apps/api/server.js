@@ -323,10 +323,26 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       LIMIT ? OFFSET ?
     `).all(...args, limit, offset);
 
+    // Faceta por tipo: mismo criterio que las de /api/search — se aplica todo el
+    // filtro MENOS el propio, para que la faceta muestre a dónde se puede ir.
+    const whereSinTipo = ["1=1"], argsSinTipo = [];
+    if (q) { whereSinTipo.push("e.nombre_norm LIKE ?"); argsSinTipo.push(`%${normName(q)}%`); }
+    if (depto) { whereSinTipo.push("r.divipola_depto = ?"); argsSinTipo.push(depto); }
+    if (dominio) { whereSinTipo.push("r.dominio = ?"); argsSinTipo.push(dominio); }
+    const porTipo = prep(`
+      SELECT tipo, COUNT(*) n FROM (
+        SELECT e.tipo FROM entidades e
+        JOIN entidad_registros er ON er.id_entidad = e.id_entidad
+        JOIN registros r ON r.id_interno = er.id_interno
+        WHERE ${whereSinTipo.join(" AND ")} GROUP BY e.id_entidad, e.tipo)
+      GROUP BY tipo ORDER BY n DESC
+    `).all(...argsSinTipo);
+
     const terr = territoriosDe(items.map((i) => i.id_entidad));
     return {
       total, limit, offset,
       filtros: { tipo, depto, dominio, q: q || null },
+      facetas: { tipo: porTipo },
       items: items.map((i) => ({ ...i, territorios: terr.get(i.id_entidad) ?? [] })),
     };
   }

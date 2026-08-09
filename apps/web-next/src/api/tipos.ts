@@ -32,7 +32,22 @@ export interface ListadoEntidades {
   limit: number;
   offset: number;
   filtros: { tipo: string | null; depto: string | null; dominio: string | null; q: string | null };
+  /** Composición del catálogo bajo los filtros activos, sin acotarse a sí misma. */
+  facetas: { tipo: { tipo: TipoEntidad; n: number }[] };
   items: EntidadListada[];
+}
+
+/** Ranking por peso agregado de una relación del grafo (ADR-008). Es un conteo, no un puntaje. */
+export interface ItemConcentracion {
+  id_entidad: string;
+  nombre_canonico: string | null;
+  relaciones: number;
+}
+
+export interface EstadisticasGrafo {
+  nodos: number;
+  aristas: number;
+  por_tipo: { tipo: string; n: number; peso: number }[];
 }
 
 export interface FuenteDeEntidad {

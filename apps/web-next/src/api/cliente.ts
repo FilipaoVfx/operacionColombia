@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type {
   ListadoEntidades, FichaEntidad, EvidenciaEntidad, RegistroConLinaje, Meta, TipoEntidad,
+  ItemConcentracion, EstadisticasGrafo,
 } from "./tipos";
 
 /**
@@ -81,4 +82,24 @@ export const useRegistro = (id: string | null) =>
     queryKey: ["registro", id],
     enabled: Boolean(id),
     queryFn: ({ signal }) => get<RegistroConLinaje>(`/api/registros/${encodeURIComponent(id!)}`, signal),
+  });
+
+export const useGrafoStats = () =>
+  useQuery({
+    queryKey: ["grafo-stats"],
+    queryFn: ({ signal }) => get<EstadisticasGrafo>("/api/graph/stats", signal),
+    staleTime: 5 * 60_000,
+  });
+
+/**
+ * Concentración: qué entidades acumulan más relaciones de un tipo dado.
+ * Responde la pregunta del catálogo ("qué empresa concentra adjudicaciones")
+ * contando aristas reales — no hay ponderación ni modelo detrás.
+ */
+export const useConcentracion = (arista: string, tipo: string, depto?: string | null, limit = 8) =>
+  useQuery({
+    queryKey: ["concentracion", arista, tipo, depto, limit],
+    queryFn: ({ signal }) =>
+      get<ItemConcentracion[]>(`/api/graph/concentracion${qs({ arista, tipo, depto, limit })}`, signal),
+    staleTime: 5 * 60_000,
   });

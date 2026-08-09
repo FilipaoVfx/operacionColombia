@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { useEntidades, useMeta } from "../api/cliente";
 import { Card, Cargando, Error_, FechaRelativa, Numero, SinDato, Vacio } from "../components/base";
 import type { TipoEntidad } from "../api/tipos";
@@ -13,9 +13,14 @@ const PAGINA = 50;
  * "Última señal" se nombra por lo que realmente es: última ingesta.
  */
 export function PaginaEntidades() {
-  const [tipo, setTipo] = useState<TipoEntidad | null>(null);
-  const [depto, setDepto] = useState<string | null>(null);
-  const [q, setQ] = useState("");
+  // Los filtros pueden llegar por URL (la portada enlaza acá ya filtrado),
+  // así que una vista compartida reproduce lo que el otro estaba viendo.
+  const params = new URLSearchParams(useSearch());
+  const [tipo, setTipo] = useState<TipoEntidad | null>(
+    (params.get("tipo") as TipoEntidad | null) ?? null,
+  );
+  const [depto, setDepto] = useState<string | null>(params.get("depto"));
+  const [q, setQ] = useState(params.get("q") ?? "");
   const [offset, setOffset] = useState(0);
 
   const meta = useMeta();

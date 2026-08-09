@@ -1,5 +1,6 @@
 import { Link, Route, Switch, useRoute } from "wouter";
 import { useMeta } from "./api/cliente";
+import { PaginaInicio } from "./pages/Inicio";
 import { PaginaEntidades } from "./pages/Entidades";
 import { PaginaEntidad } from "./pages/Entidad";
 import { PaginaRegistro } from "./pages/Registro";
@@ -17,7 +18,7 @@ export function App() {
       <Sidebar />
       <main className="min-w-0 flex-1 overflow-y-auto">
         <Switch>
-          <Route path="/" component={PaginaEntidades} />
+          <Route path="/" component={PaginaInicio} />
           <Route path="/entidades" component={PaginaEntidades} />
           <Route path="/entidades/:id">{(p) => <PaginaEntidad id={decodeURIComponent(p.id)} />}</Route>
           <Route path="/registros/:id">{(p) => <PaginaRegistro id={decodeURIComponent(p.id)} />}</Route>
@@ -42,6 +43,7 @@ function Sidebar() {
       </div>
 
       <p className="px-4 pb-1 pt-3 text-2xs uppercase tracking-wider text-ink-invert-muted">Explorar</p>
+      <Item href="/" match="/">Inicio</Item>
       <Item href="/entidades" match="/entidades">Entidades</Item>
 
       <div className="mt-auto space-y-2 border-t border-white/10 px-4 py-3 text-2xs">

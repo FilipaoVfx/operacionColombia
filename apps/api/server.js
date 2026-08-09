@@ -409,6 +409,72 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     };
   }
 
+  // -------------------------------------------------------------------------
+  // Agregados de contratación para la vista de análisis. Salen de los read
+  // models (M8), que ya excluyen duplicados SECOP vía contrato_dedupe; el flujo
+  // entidad→proveedor no tiene vista propia y se agrega acá con el mismo criterio.
+  // Nada se estima: si un contrato no trae valor, no suma.
+  // -------------------------------------------------------------------------
+  function handleContratacionAgregados(qp) {
+    const depto = /^\d{2}$/.test(qp.get("depto") || "") ? qp.get("depto") : null;
+    const topProv = Math.min(parseInt(qp.get("proveedores"), 10) || 20, 200);
+    const topFlujo = Math.min(parseInt(qp.get("flujos"), 10) || 40, 300);
+    const dw = depto ? "WHERE cod_dpto = ?" : "";
+    const da = depto ? [depto] : [];
+
+    const nombreDepto = `(SELECT dpto FROM divipola d WHERE d.cod_dpto = t.cod_dpto LIMIT 1)`;
+
+    // depto × año: alimenta el mapa de calor temporal
+    const porDeptoAnio = prep(`
+      SELECT t.cod_dpto, ${nombreDepto} departamento, t.anio,
+             SUM(t.contratos) contratos, SUM(t.valor_total) valor_total
+      FROM rm_contratos_depto t ${dw}
+      GROUP BY t.cod_dpto, t.anio
+      HAVING t.cod_dpto IS NOT NULL
+      ORDER BY valor_total DESC
+    `).all(...da);
+
+    // depto → proveedor: alimenta el treemap jerárquico
+    const porProveedor = prep(`
+      SELECT t.cod_dpto, ${nombreDepto} departamento, t.proveedor,
+             SUM(t.contratos) contratos, SUM(t.valor_total) valor_total
+      FROM rm_top_proveedores_depto t ${dw}
+      GROUP BY t.cod_dpto, t.proveedor
+      ORDER BY valor_total DESC LIMIT ?
+    `).all(...da, topProv);
+
+    // entidad → proveedor: alimenta el Sankey. Sin read model propio, se agrega
+    // igual que las vistas: solo la fila preferida de cada contrato.
+    const flujo = prep(`
+      SELECT json_extract(r.campos,'$.entidad')   entidad,
+             json_extract(r.campos,'$.proveedor') proveedor,
+             COUNT(*) contratos,
+             ROUND(SUM(json_extract(r.campos,'$.valor_contrato')), 0) valor_total
+      FROM registros r
+      LEFT JOIN contrato_dedupe d ON d.id_interno = r.id_interno
+      WHERE r.dominio='contratacion' AND COALESCE(d.preferida, 1) = 1
+        AND json_extract(r.campos,'$.entidad') IS NOT NULL
+        AND json_extract(r.campos,'$.proveedor') IS NOT NULL
+        ${depto ? "AND r.divipola_depto = ?" : ""}
+      GROUP BY entidad, proveedor
+      ORDER BY valor_total DESC LIMIT ?
+    `).all(...da, topFlujo);
+
+    const totales = prep(`
+      SELECT COALESCE(SUM(contratos),0) contratos, COALESCE(SUM(valor_total),0) valor_total
+      FROM rm_contratos_depto ${depto ? "WHERE cod_dpto = ?" : ""}
+    `).get(...da);
+
+    return {
+      depto,
+      totales,
+      anios: [...new Set(porDeptoAnio.map((r) => r.anio).filter((a) => a != null))].sort(),
+      por_depto_anio: porDeptoAnio,
+      por_proveedor: porProveedor,
+      flujo_entidad_proveedor: flujo,
+    };
+  }
+
   // search: query router → índice FTS (M7); fallback LIKE si el índice está vacío
   function handleSearch(qp) {
     const q = qp.get("q") || "";
@@ -660,6 +726,9 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       }
 
       // M6 — entidades: listado, ficha y evidencia que la respalda
+      if (path === "/api/contratacion/agregados") {
+        return sendCachedJson(req, res, cacheKey, () => handleContratacionAgregados(qp), { maxAge: 300 });
+      }
       if (path === "/api/entidades") {
         return sendCachedJson(req, res, cacheKey, () => handleEntidades(qp), { maxAge: 300 });
       }

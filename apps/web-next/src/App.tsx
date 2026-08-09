@@ -1,10 +1,16 @@
+import { lazy, Suspense } from "react";
 import { Link, Route, Router, Switch, useRoute } from "wouter";
 import { useMeta } from "./api/cliente";
 import { PaginaInicio } from "./pages/Inicio";
 import { PaginaEntidades } from "./pages/Entidades";
 import { PaginaEntidad } from "./pages/Entidad";
 import { PaginaRegistro } from "./pages/Registro";
-import { FechaRelativa, Numero } from "./components/base";
+import { Cargando, FechaRelativa, Numero } from "./components/base";
+
+// Las rutas de análisis cargan Chart.js aparte: la portada y las fichas no
+// pagan esos bytes. Es la razón por la que el bundle base se mantiene chico.
+const PaginaContratacion = lazy(() =>
+  import("./pages/Contratacion").then((m) => ({ default: m.PaginaContratacion })));
 
 /**
  * Shell. La navegación lista solo lo que existe y tiene dato detrás: el mockup
@@ -33,6 +39,9 @@ function Contenido() {
           <Route path="/entidades" component={PaginaEntidades} />
           <Route path="/entidades/:id">{(p) => <PaginaEntidad id={decodeURIComponent(p.id)} />}</Route>
           <Route path="/registros/:id">{(p) => <PaginaRegistro id={decodeURIComponent(p.id)} />}</Route>
+          <Route path="/contratacion">
+            <Suspense fallback={<Cargando filas={8} />}><PaginaContratacion /></Suspense>
+          </Route>
           <Route>
             <div className="p-8 text-center text-sm text-ink-muted">Página no encontrada.</div>
           </Route>
@@ -56,6 +65,7 @@ function Sidebar() {
       <p className="px-4 pb-1 pt-3 text-2xs uppercase tracking-wider text-ink-invert-muted">Explorar</p>
       <Item href="/" match="/">Inicio</Item>
       <Item href="/entidades" match="/entidades">Entidades</Item>
+      <Item href="/contratacion" match="/contratacion">Contratación</Item>
 
       <div className="mt-auto space-y-2 border-t border-white/10 px-4 py-3 text-2xs">
         {error ? (

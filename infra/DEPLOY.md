@@ -91,4 +91,6 @@ ruta, corridas ETL) y **Datasets** (filas y frescura por fuente).
   fan-out ejecutado (grafo 0 → **49 886 aristas**, search 47 121 → 49 456, vistas
   reconstruidas); SSRF del explorer cerrado (`?domain=169.254.169.254` → 400) y
   `register` exigiendo `X-Admin-Token` (401 sin él, 201 con él).
+- **2026-08-09 (deploy por pull activo):** `oc-deploy.timer` cada 5 min contra `main`;
+  primera corrida real `5eddd50 → 4509f91` en 11 s (tests 89/89, restart, healthcheck ok).
 - **Pendiente:** rate-limit y CORS en la Read API.

@@ -6,7 +6,7 @@
 // ETag/If-None-Match → 304; invalidación por versión, no TTL ciego.
 import http from "node:http";
 import { gzipSync } from "node:zlib";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, extname, normalize } from "node:path";
@@ -340,6 +340,28 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       { "Cache-Control": cache ? `public, max-age=${cache}` : "no-store" });
   }
 
+  /**
+   * Autorización de escritura (PLANNING §5.3). `register` alimenta el scheduler del ETL,
+   * así que no puede quedar abierto: exige `X-Admin-Token` == EXPLORER_ADMIN_TOKEN.
+   * Falla cerrado — sin token configurado, nadie escribe.
+   */
+  function authorizeWrite(req, res) {
+    const esperado = process.env.EXPLORER_ADMIN_TOKEN || "";
+    if (!esperado) {
+      sendJson(req, res, { error: "escritura deshabilitada", detail: "EXPLORER_ADMIN_TOKEN no configurado en el servidor" }, { status: 503 });
+      return false;
+    }
+    const dado = req.headers["x-admin-token"];
+    const ok = typeof dado === "string" && dado.length === esperado.length
+      && timingSafeEqual(Buffer.from(dado), Buffer.from(esperado));
+    if (!ok) {
+      log.warn("escritura rechazada", { url: req.url, ip: req.socket.remoteAddress });
+      sendJson(req, res, { error: "no autorizado" }, { status: 401 });
+      return false;
+    }
+    return true;
+  }
+
   async function readJsonBody(req, { max = 1_000_000 } = {}) {
     let size = 0;
     const chunks = [];
@@ -418,6 +440,9 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
 
       // M11 — Socrata Explorer: llamadas en vivo al catálogo externo, sin caché por versión
       // de datos (no son datos ingeridos todavía). Errores de red → 502, no 500.
+      // `domain`/`id` los valida el explorer contra su allowlist (SSRF): eso es 400 del
+      // cliente, no 502 de la fuente.
+      const errExplorer = (e) => (/no permitido|inválido/.test(e.message) ? 400 : 502);
       if (path === "/api/explorer/search") {
         try {
           const results = await searchCatalog({
@@ -425,21 +450,21 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
             domain: qp.get("domain") || undefined, limit: qp.get("limit") ? Number(qp.get("limit")) : undefined,
           });
           return sendJson(req, res, { results }, { cache: 300 });
-        } catch (e) { return sendJson(req, res, { error: "catálogo no disponible", detail: String(e.message) }, { status: 502 }); }
+        } catch (e) { return sendJson(req, res, { error: "catálogo no disponible", detail: String(e.message) }, { status: errExplorer(e) }); }
       }
       if (path === "/api/explorer/preview") {
         if (!qp.get("id")) return sendJson(req, res, { error: "falta ?id=" }, { status: 400 });
         try {
           const out = await previewDataset(qp.get("id"), { domain: qp.get("domain") || undefined, sample: qp.get("sample") ? Number(qp.get("sample")) : undefined });
           return sendJson(req, res, out, { cache: 300 });
-        } catch (e) { return sendJson(req, res, { error: "dataset no disponible", detail: String(e.message) }, { status: 502 }); }
+        } catch (e) { return sendJson(req, res, { error: "dataset no disponible", detail: String(e.message) }, { status: errExplorer(e) }); }
       }
       if (path === "/api/explorer/profile") {
         if (!qp.get("id")) return sendJson(req, res, { error: "falta ?id=" }, { status: 400 });
         try {
           const out = await profileDataset(qp.get("id"), { domain: qp.get("domain") || undefined, sample: qp.get("sample") ? Number(qp.get("sample")) : undefined });
           return sendJson(req, res, out, { cache: 300 });
-        } catch (e) { return sendJson(req, res, { error: "dataset no disponible", detail: String(e.message) }, { status: 502 }); }
+        } catch (e) { return sendJson(req, res, { error: "dataset no disponible", detail: String(e.message) }, { status: errExplorer(e) }); }
       }
       if (path === "/api/explorer/sources") {
         const registradas = listExplorerSources(db).map((s) => ({ id: s.id, nombre: s.nombre, domain: s.domain, priority: s.priority, schedule: s.schedule }));
@@ -448,6 +473,7 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
         return sendJson(req, res, { fuentes: registradas.map((s) => ({ ...s, ingesta: metaById[s.id] ?? null })) }, { cache: 30 });
       }
       if (path === "/api/explorer/register" && req.method === "POST") {
+        if (!authorizeWrite(req, res)) return;
         try {
           const body = await readJsonBody(req);
           const cfg = registerSource(db, body);

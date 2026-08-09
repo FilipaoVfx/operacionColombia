@@ -76,3 +76,36 @@ test("by-id incluye linaje completo", async () => {
   assert.ok(rec.hash);
   assert.ok(Array.isArray(rec.transformaciones));
 });
+
+// PLANNING §5.3 — /api/explorer/register alimenta el scheduler del ETL: escritura sin
+// auth = cualquiera inyecta fuentes. Falla cerrado si no hay token en el servidor.
+test("register sin EXPLORER_ADMIN_TOKEN configurado: 503, no escribe", async () => {
+  delete process.env.EXPLORER_ADMIN_TOKEN;
+  const r = await fetch(`${base}/api/explorer/register`, {
+    method: "POST", body: JSON.stringify({ id: "abcd-1234", targetDomain: "mineria" }),
+  });
+  assert.equal(r.status, 503);
+});
+
+test("register con token inválido: 401; con token válido: 201", async () => {
+  process.env.EXPLORER_ADMIN_TOKEN = "s3creto-de-prueba";
+  const malo = await fetch(`${base}/api/explorer/register`, {
+    method: "POST", headers: { "X-Admin-Token": "otro-token-largo" },
+    body: JSON.stringify({ id: "abcd-1234", targetDomain: "mineria" }),
+  });
+  assert.equal(malo.status, 401);
+
+  const bueno = await fetch(`${base}/api/explorer/register`, {
+    method: "POST", headers: { "X-Admin-Token": "s3creto-de-prueba" },
+    body: JSON.stringify({ id: "abcd-1234", targetDomain: "mineria" }),
+  });
+  assert.equal(bueno.status, 201);
+  assert.equal((await bueno.json()).fuente.id, "abcd-1234");
+  delete process.env.EXPLORER_ADMIN_TOKEN;
+});
+
+test("explorer rechaza dominio fuera de la allowlist con 400, no 502", async () => {
+  const r = await fetch(`${base}/api/explorer/preview?id=abcd-1234&domain=169.254.169.254`);
+  assert.equal(r.status, 400);
+  assert.match((await r.json()).detail, /no permitido/);
+});

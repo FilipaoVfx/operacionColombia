@@ -6,12 +6,21 @@
 
 ## Topología
 ```
-:80 nginx (micro-cache 60s API, 300s estáticos, single-flight)
+cloudflared (túnel público, systemd: cloudflared-opcol.service)
+      │ --url http://localhost:80
+:80 nginx (micro-cache, single-flight)
       │ proxy_pass
-:8081 run-node.sh apps/api/server.js   (systemd: operacion-colombia.service)
+:8081 run-node.sh apps/api/server.js   (systemd: operacion-colombia.service, HOST=127.0.0.1)
       │
 data/osint.db  (registro unificado + read models, poblada por el ETL)
 ```
+
+El túnel entra por nginx, no por el proceso Node: el edge es la única puerta de
+entrada y el tráfico público aprovecha el micro-caché. Con `HOST=127.0.0.1` el
+proceso no acepta conexiones externas ni siquiera si se abre el puerto.
+
+> El túnel rápido (`--url`) genera una URL nueva en cada reinicio. Para una URL
+> estable hace falta un túnel con nombre y credencial.
 
 La API sirve `/api/*` y el panel (`apps/web/`) desde el mismo proceso, como usuario
 `ocolombia` sin shell. `PORT`/`HOST` y las variables de fuentes salen de

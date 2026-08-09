@@ -19,6 +19,8 @@
     "tick": "node services/orchestrator/cli.js tick",
     "entities": "node services/entity-res/cli.js",
     "views": "node services/views-builder/cli.js",
-    "geo": "node services/geo-indexer/cli.js"
+    "geo": "node services/geo-indexer/cli.js",
+    "anm": "node services/arcgis-explorer/cli.js",
+    "anm:perfil": "node services/arcgis-explorer/cli.js --profile --dict mineria --sample 500"
   }
 }

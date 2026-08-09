@@ -42,11 +42,18 @@ export async function discover(source) {
   const info = await fetchJson(`${source.endpoint}?f=json`);
   const count = await fetchJson(`${source.endpoint}/query?where=1%3D1&returnCountOnly=true&f=json`);
   const esquema = (info.fields || []).map((f) => ({ name: f.name, type: f.type }));
+
+  // ArcGIS no expone etag. Conteo+esquema como única huella falla en registros
+  // vivos: el catastro minero da de alta y de baja títulos continuamente, así que
+  // N altas y N bajas dejan el conteo igual y la re-ingesta se saltaría un cambio
+  // real. `editingInfo.lastEditDate` es la última edición efectiva de la capa y
+  // sí se mueve; cuando el servicio la publica, manda ella.
+  const lastEditDate = info.editingInfo?.lastEditDate ?? null;
   return {
     descripcion: info.name ?? null,
     esquema,
-    // ArcGIS no expone etag; usamos conteo+esquema como huella de frescura (aprox).
-    hash: sha256({ esquema, count: count.count }),
+    hash: sha256({ esquema, count: count.count, lastEditDate }),
+    ultima_edicion: lastEditDate ? new Date(lastEditDate).toISOString() : null,
     filas: count.count,
   };
 }

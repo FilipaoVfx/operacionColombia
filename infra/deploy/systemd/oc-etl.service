@@ -1,0 +1,16 @@
+[Unit]
+Description=Operación Colombia — corrida ETL de todas las fuentes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ocolombia
+Group=ocolombia
+WorkingDirectory=/opt/operacion-colombia
+EnvironmentFile=/etc/operacion-colombia.env
+# el skip por etag/hash (M2) evita re-ingerir lo que no cambió
+ExecStart=/opt/operacion-colombia/infra/deploy/run-node.sh services/connectors/cli.js run --all
+TimeoutStartSec=3h
+StandardOutput=journal
+StandardError=journal

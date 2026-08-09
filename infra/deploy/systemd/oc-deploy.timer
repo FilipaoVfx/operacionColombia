@@ -1,0 +1,12 @@
+[Unit]
+Description=Revisa la rama desplegada cada 5 minutos
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+# evita que varios servidores golpeen GitHub en el mismo segundo
+RandomizedDelaySec=60
+Persistent=true
+
+[Install]
+WantedBy=timers.target

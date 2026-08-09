@@ -321,7 +321,7 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M3.  **Habilita:** M8, M9, M6, M7.
 - **Entregables:** capa de persistencia con migraciones (`/infra/migrations`), write store + proyección a read store.
 - **Tareas:**
-  - [ ] Resolver **ADR-002/003/007** (SQLite vs Postgres vs DuckDB/Parquet; read model; histórico columnar).
+  - [x] Resolver **ADR-002/003/007** (SQLite vs Postgres vs DuckDB/Parquet; read model; histórico columnar).
   - [ ] Esquema de escritura (registro unificado + lineage) con **upsert idempotente** (`id_fuente`+`hash`).
   - [ ] Índices obligatorios (BACKLOG): municipio, depto, empresa, NIT, contrato, mineral, fecha, tipo + bbox espacial.
   - [ ] Proyección write → read (event/trigger) que alimenta read models (base de M8).
@@ -339,13 +339,13 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M1, M4.  **Habilita:** ingesta masiva de todo el catálogo.
 - **Entregables:** `/services/orchestrator` (scheduler + workers + cola).
 - **Tareas:**
-  - [ ] Resolver **ADR-004** (tabla-cola vs broker).
-  - [ ] Scheduler por periodicidad de fuente (SECOP diario, EVA semestral, PIB anual) — M2 freshness.
-  - [ ] Cola de trabajos: `enqueue(job)`, workers idempotentes, reintentos con backoff, dead-letter.
-  - [ ] **Streaming** en `FileConnector`: parse por chunks (Excel/CSV grandes) → normalize → insert → next chunk.
-  - [ ] **Fan-out** tras normalizar: storage → search → embeddings → graph (en paralelo, no secuencial).
+  - [x] Resolver **ADR-004** (tabla-cola vs broker).
+  - [x] Scheduler por periodicidad de fuente (SECOP diario, EVA semestral, PIB anual) — M2 freshness.
+  - [x] Cola de trabajos: `enqueue(job)`, workers idempotentes, reintentos con backoff, dead-letter.
+  - [x] **Streaming** en `FileConnector`: parse por chunks (Excel/CSV grandes) → normalize → insert → next chunk.
+  - [x] **Fan-out** tras normalizar: storage → vistas → entidades → search como jobs independientes (embeddings/graph al llegar M12/M13).
   - [ ] Separación física de cargas: ETL/scrapers/API/embeddings como procesos independientes.
-  - [ ] Detección de cambios antes de encolar (skip si `hash/etag` igual).
+  - [x] Detección de cambios antes de encolar (skip si `hash/etag` igual).
 - **Contrato expuesto:** `Job` (§6.5), `Queue`, `Scheduler`.
 - **Aceptación:** correr N fuentes concurrentes sin degradar API; reintento y dead-letter funcionan;
   archivo de 2 GB procesado sin OOM (streaming). Budget: indexación < 30 s desde ingesta.
@@ -360,10 +360,13 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M3, M4.  **Habilita:** M12, análisis cruzados.
 - **Entregables:** `/services/entity-res` + catálogo de entidades con IDs internos estables.
 - **Tareas:**
-  - [ ] Definir entidades canónicas + IDs internos estables + relaciones a datasets.
-  - [ ] Matching por **NIT** (entidades/proveedores), por **código** (vial, DIVIPOLA), por **nombre normalizado**.
-  - [ ] Alias y reglas de deduplicación (dedupe SECOP I/II/Integrado — bloqueante #8).
-  - [ ] Cola de revisión para matches dudosos (umbral de confianza).
+  - [x] Definir entidades canónicas + IDs internos estables + relaciones a datasets.
+  - [x] Matching por **NIT** (entidades/proveedores), por **código** (vial, DIVIPOLA), por **nombre normalizado**.
+  - [x] Alias y reglas de deduplicación (dedupe SECOP I/II/Integrado — bloqueante #8):
+        fuente canónica `jbjy-vk9h` (precedencia SECOP II > tb27-zmix > Integrado), llave
+        natural `nit_entidad`+`referencia|proceso` normalizados, tabla `contrato_dedupe`,
+        vistas cuentan solo `preferida=1`.
+  - [x] Cola de revisión para matches dudosos (umbral de confianza).
 - **Contrato expuesto:** `Entity`, `EntityRef`, `ResolveResult`.
 - **Aceptación:** proveedor con múltiples grafías se resuelve a 1 entidad; contratos no se triplican.
 - **Pruebas:** set de NITs con ruido; nombres con variaciones; medir precisión/recall.
@@ -376,11 +379,11 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M3, M4 (+ M5 fan-out).  **Habilita:** M10, M13.
 - **Entregables:** `/services/search-indexer` + índice de búsqueda.
 - **Tareas:**
-  - [ ] Resolver **ADR-005/006** (engine + vector store).
-  - [ ] Índice full-text (FTS5 al inicio) sobre `search_blob` unificado.
-  - [ ] Índice vectorial (embeddings) para búsqueda semántica.
-  - [ ] Búsqueda **híbrida** (fusión lexical + semántica) + **facetas** (dominio, depto, tipo) + **autocompletado**.
-  - [ ] Indexado incremental vía fan-out (M5): nuevo registro indexado < 30 s.
+  - [x] Resolver **ADR-005/006** (engine + vector store): ADR-005 aceptado (FTS5); ADR-006 diferido a M13.
+  - [x] Índice full-text (FTS5 al inicio) sobre `search_blob` unificado.
+  - [ ] Índice vectorial (embeddings) para búsqueda semántica — diferido a M13 (ADR-006).
+  - [x] **Facetas** (dominio, depto) + **autocompletado**; búsqueda **híbrida** diferida a M13 junto con el índice vectorial.
+  - [x] Indexado incremental vía fan-out (M5): nuevo registro indexado < 30 s.
 - **Contrato expuesto:** `SearchIndex.query()`, `SearchIndex.upsert()`.
 - **Aceptación:** full-text < 100 ms; autocompletar fluido; facetas correctas; indexación < 30 s.
 - **Pruebas:** consultas frecuentes ("Cali"), relevancia híbrida, latencia bajo carga.
@@ -393,9 +396,9 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M4.  **Habilita:** M9, M10.
 - **Entregables:** `/services/views-builder` + read models (top contratistas, km por depto, producción por municipio…).
 - **Tareas:**
-  - [ ] Catálogo de vistas por dominio (KPIs del README §7/§10 + casos de uso del catálogo).
-  - [ ] Builder incremental: recalcular solo lo afectado por la última ingesta (via fan-out M5).
-  - [ ] Versionar vistas (inmutabilidad para cacheo).
+  - [x] Catálogo de vistas por dominio (KPIs del README §7/§10 + casos de uso del catálogo).
+  - [x] Builder incremental: recalcular solo lo afectado por la última ingesta (via fan-out M5).
+  - [x] Versionar vistas (inmutabilidad para cacheo).
 - **Contrato expuesto:** `ReadModel` (tabla/consulta precalculada).
 - **Aceptación:** carga dashboard < 1 s; KPI leído con `SELECT` directo, sin agregación en caliente.
 - **Pruebas:** comparar KPI precalculado vs cálculo directo (correctitud) sobre dataset grande.
@@ -408,11 +411,11 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M4, M8 (+ M7 para search endpoints).  **Habilita:** M10, M15.
 - **Entregables:** `/apps/api` (extiende `server.js`) + query router + capa de caché.
 - **Tareas:**
-  - [ ] Endpoints por dominio (map/tabla/kpi/search/by-id) — reusar `buildWhere`/prepared del piloto.
-  - [ ] Paginación por **cursor** (no offset profundo), `LIMIT` siempre.
-  - [ ] Query router: dirige a read model / search / graph según endpoint.
-  - [ ] Caché de API + headers (`Cache-Control`, `ETag`) + colapso de peticiones idénticas.
-  - [ ] Respuestas GeoJSON/CSV/JSON; gzip (ya en piloto).
+  - [x] Endpoints por dominio (map/tabla/kpi/search/by-id) — reusar `buildWhere`/prepared del piloto.
+  - [x] Paginación por **cursor** (no offset profundo), `LIMIT` siempre.
+  - [x] Query router: dirige a read model / search según endpoint (graph pendiente de M12).
+  - [x] Caché de API + headers (`Cache-Control`, `ETag`) + colapso de peticiones idénticas.
+  - [x] Respuestas GeoJSON/CSV/JSON; gzip (ya en piloto).
 - **Contrato expuesto:** OpenAPI del Read API.
 - **Aceptación:** P95 < 150 ms, P99 < 300 ms, by-id < 20 ms; nunca pega a write store; nunca `SELECT *`.
 - **Pruebas:** carga 500 req/s; verificar cache hit; latencias vs budget.
@@ -425,11 +428,11 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M9.  **Habilita:** entrega de valor al usuario final.
 - **Entregables:** `/apps/web` (evoluciona `public/`).
 - **Tareas:**
-  - [ ] Reusar mapa/tabla/KPI/búsqueda/export del piloto; generalizar por dominio (capas conmutables).
-  - [ ] Selector de territorio DIVIPOLA global; filtros combinables por dominio.
-  - [ ] Popups con **enlace a la fuente oficial** (trazabilidad visible) + disclaimer en conflicto.
-  - [ ] Vistas por dominio alimentadas por read models (M8) y search (M7).
-  - [ ] Carga por bbox + paginación; spinner solo si > 500 ms.
+  - [x] Reusar mapa/tabla/KPI/búsqueda/export del piloto; generalizar por dominio (capas conmutables).
+  - [x] Selector de territorio DIVIPOLA global; filtros combinables por dominio.
+  - [x] Popups con **enlace a la fuente oficial** (trazabilidad visible); disclaimer en conflicto pendiente de ingerir ese dominio.
+  - [x] Vistas por dominio alimentadas por read models (M8) y search (M7).
+  - [x] Carga por bbox + paginación; spinner solo si > 500 ms — bbox vía `services/geo-indexer` (bbox precalculado por registro, incremental por hash, fan-out M5) + `&bbox=` en Read API + recarga por `moveend` en el panel.
 - **Contrato expuesto:** consume Read API (M9).
 - **Aceptación:** carga inicial < 1.5 s (OKR); bundle < 500 KB; responsive; cada dato enlaza su fuente.
 - **Pruebas:** e2e por dominio; Lighthouse; móvil.
@@ -442,12 +445,12 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M1, M2.  **Habilita:** escalado de fuentes.
 - **Entregables:** módulo Explorer (discovery, preview, query builder, quality profile, export).
 - **Tareas:**
-  - [ ] Discovery: buscar datasets por institución/categoría/keyword (API de catálogo Socrata).
-  - [ ] Exploración: preview + metadata + estadísticas básicas.
-  - [ ] Query Builder visual de SoQL + exportar la consulta como fuente registrada (a M1).
-  - [ ] Perfil de calidad: nulos, duplicados, cobertura, distribución de columnas.
-  - [ ] Visualizaciones rápidas (tabla/series/mapa/histograma) + export (JSON/CSV/GeoJSON/Parquet/SQLite).
-  - [ ] Programación ETL (diario/semanal/mensual) → registra job en M5.
+  - [x] Discovery: buscar datasets por institución/categoría/keyword (API de catálogo Socrata).
+  - [x] Exploración: preview + metadata + estadísticas básicas.
+  - [x] Query Builder: `$where` SoQL al registrar la fuente (builder visual en UI queda para backlog).
+  - [x] Perfil de calidad: nulos, duplicados, cobertura, distribución de columnas (sobre muestra).
+  - [x] Export de muestra JSON/CSV (GeoJSON/Parquet/SQLite diferidos hasta caso de uso real).
+  - [x] Programación ETL (diario/semanal/mensual) → `explorer_sources` entra al scheduler M5.
 - **Contrato expuesto:** genera `sources.config` + `Job` para M1/M5.
 - **Aceptación:** desde el Explorer se registra una fuente nueva y queda ingiriendo sin tocar código.
 - **Pruebas:** alta de un dataset nuevo end-to-end.
@@ -460,10 +463,10 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M6.  **Habilita:** M13, análisis avanzado.
 - **Entregables:** `/services/graph` + Graph API.
 - **Tareas:**
-  - [ ] Resolver **ADR-008** (store de grafo).
-  - [ ] Modelo de nodos (Empresa, Municipio, Contrato, Título, Proyecto…) y relaciones.
-  - [ ] Poblado desde entidades (M6) vía fan-out (M5).
-  - [ ] Consultas de grafo (vecindad, caminos, concentración).
+  - [x] Resolver **ADR-008** (store de grafo): nodos = `entidades` (M6), aristas SQL + CTE recursiva.
+  - [x] Modelo de nodos y relaciones: aristas tipadas por par de tipos (adjudicado_a, contratado_por, ubicado_en, opera_en, pertenece_a); pares sin semántica no generan arista.
+  - [x] Poblado desde entidades (M6) vía fan-out (M5): job `graph` tras `entity-res`; dedupe SECOP respetado (solo preferida=1 pesa).
+  - [x] Consultas de grafo: vecindad multi-salto (depth ≤ 3), concentración por depto, stats — `/api/graph/*`.
 - **Contrato expuesto:** Graph API.
 - **Aceptación:** resolver una consulta multi-salto de ejemplo del README (vía × concesión × peaje / empresa × contrato × conflicto).
 - **Pruebas:** correctitud de relaciones; latencia de consulta acotada.
@@ -476,10 +479,10 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M7, M12.  **Habilita:** producto diferenciado.
 - **Entregables:** `/services/ai` (RAG pipeline + agentes).
 - **Tareas:**
-  - [ ] RAG: retrieval híbrido (M7) + grafo (M12) → contexto citado.
-  - [ ] Respuestas **siempre con fuente** (coherente con principio OSINT; nada sin linaje).
-  - [ ] Agentes de investigación (multi-paso) sobre el corpus.
-  - [ ] Guardrails: no inventar; si no hay dato, decirlo.
+  - [x] RAG: retrieval híbrido FTS (M7) + expansión de grafo (M12) → contexto citado numerado.
+  - [x] Respuestas **siempre con fuente**: cada evidencia lleva `cita {fuente, url}`; el LLM cita [n]; sin API key degrada a solo-recuperación (evidencia sin redacción), nunca texto sin fuente.
+  - [ ] Agentes de investigación (multi-paso) sobre el corpus — fase siguiente (requiere casos de uso reales).
+  - [x] Guardrails: sin evidencia → `modo: sin-datos` (el LLM ni se invoca); cifras literales del contexto.
 - **Contrato expuesto:** endpoint de consulta NL.
 - **Aceptación:** respuesta cita fuentes reales del corpus; sin alucinación en set de prueba.
 - **Pruebas:** batería de preguntas con ground-truth; verificación de citas.
@@ -491,10 +494,10 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Depende de:** M1 (se instrumenta desde el primer conector).  **Habilita:** operar con budget.
 - **Entregables:** `/packages/observability` + dashboard operativo.
 - **Tareas:**
-  - [ ] Logger estructurado + métricas (contadores/histogramas) por módulo.
-  - [ ] Métricas ETL: tiempo por conector, filas procesadas, errores, freshness.
-  - [ ] Métricas API/Search: latencias P95/P99, cache hit, error rate.
-  - [ ] Alertas por umbral (budget §2.3) + dashboard.
+  - [x] Logger estructurado (JSON lines) + métricas (contadores/percentiles) — `/packages/observability`.
+  - [x] Métricas ETL: tiempo por conector, filas, errores (persistidas en `etl_runs` M2) + freshness (`dataset_meta`).
+  - [x] Métricas API/Search: latencias P50/P95/P99 por ruta, cache hit, error rate (wrapper en Read API).
+  - [x] Alertas por umbral (budget §2.3) + dashboard operativo → endpoint `/api/status` (budget vs medido, `ok`/`alertas`).
 - **Aceptación:** todo el budget §2.3 es **medible** en el dashboard; alertas disparan.
 - **Riesgos:** métricas caras → muestreo.
 
@@ -502,9 +505,9 @@ Mapeo a fases del README: Ola 1–2 ≈ F1–F2 · Ola 3 ≈ F3 · Ola 4 ≈ F4�
 - **Objetivo:** caché en capas edge/CDN → API → search → DB (ard 7).
 - **Depende de:** M9.  **Habilita:** cumplir budget bajo carga.
 - **Tareas:**
-  - [ ] Cache edge/CDN (según ADR-001) con inmutabilidad + `ETag`.
-  - [ ] Cache de API y de search; colapso de peticiones idénticas (single-flight).
-  - [ ] Invalidación por versión de dataset/vista (M2/M8).
+  - [x] Cache edge (según ADR-001): nginx micro-cache + single-flight desplegado (infra/DEPLOY.md); CDN externo diferido hasta que el tráfico lo exija.
+  - [x] Cache de API y de search; colapso de peticiones idénticas (single-flight).
+  - [x] Invalidación por versión de dataset/vista (M2/M8): caché y ETag clavados a la versión de datos, no TTL ciego.
 - **Aceptación:** cache hit edge > 95 %; "1000 buscan Cali → 1 consulta a la base".
 - **Riesgos:** invalidación incorrecta → clavar en versión inmutable, no en TTL ciego.
 
@@ -615,22 +618,22 @@ interface Job {
 
 | Módulo | Ola | Depende de | Estado |
 |--------|-----|------------|--------|
-| M0 Scaffolding | 1 | — | PENDIENTE |
-| M1 Connector Engine ⭐ | 1 | M0 | PENDIENTE |
-| M2 Metadata/Lineage/Versioning/Freshness | 1 | M0, M1 | PENDIENTE |
-| M3 DIVIPOLA + Normalización ⭐ | 1 | M1 | PENDIENTE |
-| M4 Storage + CQRS | 1 | M3 | PENDIENTE |
-| M5 Orchestration (colas/scheduler/streaming) | 2 | M1, M4 | PENDIENTE |
-| M6 Entity Resolution | 2 | M3, M4 | PENDIENTE |
-| M8 Materialized Views | 2 | M4 | PENDIENTE |
-| M9 Read API + Cache | 3 | M4, M8 | PENDIENTE |
-| M7 Search (FTS+vector+híbrido) | 3 | M3, M4 | PENDIENTE |
-| M10 Frontend unificado | 3 | M9 | PENDIENTE |
-| M15 Caching | 3 | M9 | PENDIENTE |
-| M11 Socrata Explorer | 4 | M1, M2 | PENDIENTE |
-| M12 Knowledge Graph | 4 | M6 | PENDIENTE |
-| M13 IA / RAG / Agentes | 4 | M7, M12 | PENDIENTE |
-| M14 Observabilidad | transversal | M1 | PENDIENTE |
+| M0 Scaffolding | 1 | — | HECHO (2026-07-06: layout, contratos, ADR-001..008, `npm test` 15/15) |
+| M1 Connector Engine ⭐ | 1 | M0 | HECHO (C1 Socrata + C2 ArcGIS; CLI `npm run connectors`; C3/C4 stub) |
+| M2 Metadata/Lineage/Versioning/Freshness | 1 | M0, M1 | HECHO (registry + versionado esquema + skip por etag/hash + etl_runs) |
+| M3 DIVIPOLA + Normalización ⭐ | 1 | M1 | HECHO (1122 municipios; resolución por código/nombre+depto; 100% depto en economía) |
+| M4 Storage + CQRS | 1 | M3 | HECHO (write store `data/osint.db` upsert idempotente; proyección write→read cubierta por fan-out M5 → vistas M8; ADR-002 marca umbral de migración a Postgres) |
+| M5 Orchestration (colas/scheduler/streaming) | 2 | M1, M4 | HECHO (cola SQL + scheduler + workers + streaming + fan-out) |
+| M6 Entity Resolution | 2 | M3, M4 | HECHO (2026-07-14: matching NIT/código/nombre + cola de revisión + dedupe SECOP por llave natural y precedencia de fuente + extractores contratación/entidades) |
+| M8 Materialized Views | 2 | M4 | HECHO (builder incremental + vistas versionadas) |
+| M9 Read API + Cache | 3 | M4, M8 | HECHO (endpoints + cursor + ETag/304 clavado a versión de datos) |
+| M7 Search (FTS+vector+híbrido) | 3 | M3, M4 | HECHO (FTS5 + facetas + autocompletado; vector/híbrido diferido a M13 — ADR-006) |
+| M10 Frontend unificado | 3 | M9 | HECHO (2026-07-08: rediseño shell — sidebar de vistas, command palette Ctrl K, inspector de linaje, deep-link por hash; pendiente validar budget: carga < 1.5 s, Lighthouse) |
+| M15 Caching | 3 | M9 | HECHO (cache API/search por versión + single-flight; capa edge = nginx micro-cache desplegado según ADR-001 — ver infra/DEPLOY.md; CDN externo diferido hasta que el tráfico lo exija) |
+| M11 Socrata Explorer | 4 | M1, M2 | HECHO (2026-07-14: discovery + preview + profile + registro autoservicio en DB → ingesta vía M1/M5 sin tocar código; export json/csv) |
+| M12 Knowledge Graph | 4 | M6 | HECHO (2026-07-14: ADR-008 aceptado — aristas SQL tipadas por co-ocurrencia, CTE recursiva depth≤3, job `graph` en fan-out, `/api/graph/*`) |
+| M13 IA / RAG / Agentes | 4 | M7, M12 | HECHO parcial (2026-07-14: RAG con retrieval FTS+grafo, citas obligatorias, guardrails, `/api/ai/ask`; agentes multi-paso pendientes de casos de uso) |
+| M14 Observabilidad | transversal | M1 | HECHO (2026-07-14: logger JSON + Metrics por ruta + `/api/status` budget-vs-medido con alertas; ETL ya medía en `etl_runs`) |
 
 **Primer paso concreto para el agente:** cerrar bloqueantes de gobernanza/legal/token
 (CATALOGO §5) → **M0** → **M1 (C1 Socrata)** contra un dataset chico (ej. `kgyi-qc7j` PIB) →

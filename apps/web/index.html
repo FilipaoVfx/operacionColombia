@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Operación Colombia · Plataforma OSINT</title>
+
+  <!-- Tailwind (vendorizado localmente, sin build) -->
+  <script src="/vendor/tailwindcss/tailwindcss.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: { 950: "#070b14", 900: "#0b1120", 850: "#0d1526", 800: "#0f172a", 700: "#1e293b", 600: "#334155" },
+            serie: { a: "#3987e5", b: "#c98500" },
+          },
+          fontSize: { "2xs": ["10.5px", "14px"] },
+        },
+      },
+    };
+  </script>
+
+  <!-- Leaflet (vendorizado localmente) -->
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+  <script defer src="/vendor/leaflet/leaflet.js"></script>
+  <!-- Chart.js (vendorizado localmente) -->
+  <script defer src="/vendor/chartjs/chart.umd.js"></script>
+  <script type="module" src="app.js"></script>
+
+  <style>
+    html, body { height: 100%; }
+    * { scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+
+    #map { background: #070b14; }
+    .leaflet-container { font-family: inherit; }
+    .leaflet-popup-content-wrapper { background:#0f172a; color:#e2e8f0; border-radius:10px; border:1px solid #1e293b; }
+    .leaflet-popup-tip { background:#0f172a; }
+    .leaflet-popup-content { margin:12px 14px; font-size:13px; }
+    .leaflet-bar a { background:#1e293b; color:#e2e8f0; border-color:#334155; }
+    .leaflet-bar a:hover { background:#334155; }
+    .leaflet-control-layers { background:#0f172aee; color:#e2e8f0; border:1px solid #334155; border-radius:10px; }
+
+    /* glass ligero para overlays */
+    .glass { background: rgba(11,17,32,.82); backdrop-filter: blur(8px); }
+
+    /* sidebar colapsado: solo iconos */
+    #sidebar.collapsed { width: 52px; }
+    #sidebar.collapsed .nav-label, #sidebar.collapsed .nav-section, #sidebar.collapsed #brandText { display: none; }
+
+    /* skeleton loader */
+    @keyframes pulse { 50% { opacity: .35; } }
+    .skel { animation: pulse 1.6s ease-in-out infinite; background: #1e293b; border-radius: 6px; }
+
+    /* transiciones cortas (budget 150ms) */
+    .nav-item, button, a { transition: background-color .12s ease, color .12s ease, border-color .12s ease; }
+    #inspector { transition: transform .14s ease; }
+  </style>
+</head>
+
+<body class="h-full overflow-hidden bg-ink-950 font-sans text-slate-200 antialiased">
+  <div class="flex h-full">
+
+    <!-- ===== Sidebar ===== -->
+    <aside id="sidebar" class="flex w-56 shrink-0 flex-col border-r border-ink-700/70 bg-ink-900 transition-[width] duration-150">
+      <div class="flex h-12 shrink-0 items-center gap-2 border-b border-ink-700/70 px-3">
+        <div class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-serie-a text-xs font-bold text-white">OC</div>
+        <div id="brandText" class="min-w-0">
+          <p class="truncate text-[13px] font-semibold leading-tight text-white">Operación Colombia</p>
+          <p class="truncate text-2xs leading-tight text-slate-500">Plataforma OSINT</p>
+        </div>
+        <button id="sidebarToggle" title="Colapsar panel" class="ml-auto rounded-md p-1 text-slate-500 hover:bg-ink-700 hover:text-slate-200"></button>
+      </div>
+      <nav id="nav" class="min-h-0 flex-1 overflow-y-auto px-2 py-2 text-[13px]"></nav>
+      <div id="sysStatus" class="shrink-0 border-t border-ink-700/70 px-3 py-2 text-2xs text-slate-500"></div>
+    </aside>
+
+    <!-- ===== Columna principal ===== -->
+    <div class="flex min-w-0 flex-1 flex-col">
+
+      <!-- Topbar -->
+      <header class="flex h-12 shrink-0 items-center gap-3 border-b border-ink-700/70 bg-ink-900/80 px-4">
+        <ol id="breadcrumb" class="flex min-w-0 items-center gap-1.5 text-[13px] text-slate-400"></ol>
+
+        <!-- Search global: abre command palette -->
+        <button id="searchBtn"
+          class="ml-auto flex w-full max-w-md items-center gap-2 rounded-lg border border-ink-600 bg-ink-800 px-3 py-1.5 text-left text-[13px] text-slate-500 hover:border-slate-500 hover:text-slate-300">
+          <span class="icon" data-icon="search"></span>
+          <span class="flex-1 truncate">Buscar municipios, vías, actividades, datasets…</span>
+          <kbd class="rounded border border-ink-600 bg-ink-700 px-1.5 py-0.5 text-2xs text-slate-400">Ctrl K</kbd>
+        </button>
+
+        <div id="topStatus" class="flex shrink-0 items-center gap-2 text-2xs text-slate-500"></div>
+      </header>
+
+      <!-- Área central dinámica -->
+      <main id="view" class="min-h-0 flex-1 overflow-y-auto"></main>
+    </div>
+
+    <!-- ===== Inspector contextual (derecha) ===== -->
+    <aside id="inspector" class="hidden w-[360px] shrink-0 flex-col border-l border-ink-700/70 bg-ink-900 lg:flex" style="display:none"></aside>
+  </div>
+
+  <!-- ===== Command palette ===== -->
+  <div id="paletteWrap" class="fixed inset-0 z-[2000] hidden items-start justify-center bg-black/50 pt-[12vh]">
+    <div class="glass w-full max-w-xl overflow-hidden rounded-xl border border-ink-600 shadow-2xl">
+      <div class="flex items-center gap-2.5 border-b border-ink-700 px-4 py-3">
+        <span class="icon text-slate-500" data-icon="search"></span>
+        <input id="paletteInput" type="text" autocomplete="off" spellcheck="false"
+          placeholder="Buscar en toda la base de conocimiento…"
+          class="flex-1 bg-transparent text-[15px] text-slate-100 placeholder-slate-500 outline-none" />
+        <kbd class="rounded border border-ink-600 bg-ink-700 px-1.5 py-0.5 text-2xs text-slate-500">esc</kbd>
+      </div>
+      <ul id="paletteResults" class="max-h-[46vh] overflow-y-auto py-1.5"></ul>
+      <div class="flex items-center gap-3 border-t border-ink-700 px-4 py-1.5 text-2xs text-slate-500">
+        <span><kbd class="text-slate-400">↑↓</kbd> navegar</span>
+        <span><kbd class="text-slate-400">↵</kbd> abrir</span>
+        <span class="ml-auto" id="paletteMeta"></span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

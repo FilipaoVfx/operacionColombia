@@ -8,6 +8,30 @@ import { validateSourceConfig } from "../../packages/contracts/index.js";
 const CATALOG_API = "https://api.us.socrata.com/api/catalog/v1";
 const DEFAULT_DOMAIN = "www.datos.gov.co";
 
+// El `domain` y el `id` llegan del usuario y se interpolan en la URL que el servidor
+// consulta: sin allowlist esto es SSRF (metadatos del host, servicios internos). Solo
+// portales Socrata conocidos; ampliable por entorno para despliegues con otro portal.
+const ALLOWED_DOMAINS = new Set([
+  DEFAULT_DOMAIN, "datos.gov.co", "www.datosabiertos.bogota.gov.co", "datosabiertos.bogota.gov.co",
+  ...String(process.env.EXPLORER_DOMAINS || "").split(",").map((d) => d.trim().toLowerCase()).filter(Boolean),
+]);
+
+/** Valida el portal contra la allowlist. Devuelve el dominio normalizado. */
+export function assertDomain(domain) {
+  const d = String(domain ?? "").trim().toLowerCase();
+  if (!ALLOWED_DOMAINS.has(d)) {
+    throw new Error(`dominio no permitido: ${d.slice(0, 60)} (permitidos: ${[...ALLOWED_DOMAINS].join(", ")})`);
+  }
+  return d;
+}
+
+/** Los ids de Socrata son 4x4 alfanuméricos; cualquier otra cosa es inyección de ruta. */
+export function assertDatasetId(id) {
+  const s = String(id ?? "").trim();
+  if (!/^[a-z0-9]{4}-[a-z0-9]{4}$/i.test(s)) throw new Error(`id de dataset inválido: ${s.slice(0, 40)}`);
+  return s;
+}
+
 async function fetchJson(url, { timeout = 20000 } = {}) {
   const res = await fetch(url, {
     headers: { "User-Agent": "operacionColombia-Explorer/1.0", Accept: "application/json" },
@@ -37,6 +61,7 @@ export function migrateExplorer(db) {
 // B1 — Discovery: catálogo Socrata por keyword/categoría.
 // ---------------------------------------------------------------------------------------
 export async function searchCatalog({ q, category, domain = DEFAULT_DOMAIN, limit = 20 } = {}) {
+  domain = assertDomain(domain);
   const params = new URLSearchParams({ domains: domain, search_context: domain, limit: String(Math.min(limit, 100)) });
   if (q) params.set("q", q);
   if (category) params.set("categories", category);
@@ -58,6 +83,8 @@ export async function searchCatalog({ q, category, domain = DEFAULT_DOMAIN, limi
 // B2 — Exploración: metadata + preview de filas.
 // ---------------------------------------------------------------------------------------
 export async function previewDataset(id, { domain = DEFAULT_DOMAIN, sample = 20 } = {}) {
+  domain = assertDomain(domain);
+  id = assertDatasetId(id);
   const meta = await fetchJson(`https://${domain}/api/views/${id}.json`);
   const columnas = (meta.columns ?? []).map((c) => ({ nombre: c.fieldName, tipo: c.dataTypeName, etiqueta: c.name }));
   const muestra = await fetchJson(`https://${domain}/resource/${id}.json?$limit=${Math.min(sample, 200)}`);
@@ -75,6 +102,8 @@ export async function previewDataset(id, { domain = DEFAULT_DOMAIN, sample = 20 
 // Corre sobre una muestra (no el dataset completo — inviable para SECOP-sized sources).
 // ---------------------------------------------------------------------------------------
 export async function profileDataset(id, { domain = DEFAULT_DOMAIN, sample = 500 } = {}) {
+  domain = assertDomain(domain);
+  id = assertDatasetId(id);
   const rows = await fetchJson(`https://${domain}/resource/${id}.json?$limit=${Math.min(sample, 5000)}`);
   return profileRows(id, rows);
 }
@@ -116,6 +145,9 @@ export function profileRows(id, rows) {
 export function registerSource(db, { id, domain = DEFAULT_DOMAIN, targetDomain, nombre, descripcion, licencia, where, priority = "P2", schedule = "mensual" }) {
   migrateExplorer(db);
   if (!id || !targetDomain) throw new Error("registerSource requiere id y targetDomain");
+  // el endpoint persistido lo consume el ETL después: validar aquí evita guardar un SSRF diferido
+  domain = assertDomain(domain);
+  id = assertDatasetId(id);
   db.prepare(`
     INSERT INTO explorer_sources (id, domain, target_domain, nombre, descripcion, licencia, endpoint, where_clause, priority, schedule, registered_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)

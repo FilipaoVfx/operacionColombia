@@ -82,12 +82,38 @@ export function buildSearchIndex(db, domain = null) {
   }
 }
 
-// query FTS con prefijo en el último término (autocompletado fluido) y sin
-// sintaxis especial del usuario (comillas cierran inyección de operadores FTS)
-function ftsQuery(q) {
-  const terms = String(q).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+// Palabras de función: aportan ruido en el modo OR y ningún poder discriminante.
+// No se filtran en modo AND, donde el usuario escribió exactamente lo que quiso.
+const VACIAS = new Set([
+  "de", "del", "la", "el", "lo", "los", "las", "un", "una", "unos", "unas", "en", "y", "o",
+  "que", "quien", "quienes", "cual", "cuales", "como", "cuanto", "cuantos", "cuanta", "cuantas",
+  "por", "para", "con", "sin", "sobre", "entre", "desde", "hasta", "a", "al", "es", "son", "ser",
+  "se", "su", "sus", "mas", "muy", "donde", "cuando", "hay", "tiene", "tienen", "me", "mi",
+]);
+
+function tokens(q) {
+  return String(q).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
     .split(/[^a-z0-9ñ]+/).filter(Boolean);
+}
+
+/**
+ * Traduce texto libre a una expresión MATCH de FTS5. Las comillas cierran la inyección
+ * de operadores (el usuario nunca escribe sintaxis FTS).
+ *
+ * - `and` (por defecto): todos los términos, prefijo en el último → precisión y
+ *   autocompletado fluido mientras se tipea.
+ * - `or`: cualquier término significativo. Es el fallback para lenguaje natural: en
+ *   AND, "quién ganó contratos de pavimentación" exige que *todas* esas palabras estén
+ *   en el mismo registro, así que una pregunta bien formada no matchea nada.
+ */
+function ftsQuery(q, { modo = "and" } = {}) {
+  let terms = tokens(q);
+  if (modo === "or") {
+    const significativos = terms.filter((t) => !VACIAS.has(t) && t.length > 2);
+    if (significativos.length) terms = significativos;
+  }
   if (!terms.length) return null;
+  if (modo === "or") return terms.map((t) => `"${t}"`).join(" OR ");
   return terms.map((t, i) => `"${t}"${i === terms.length - 1 ? "*" : ""}`).join(" ");
 }
 
@@ -97,14 +123,28 @@ function ftsQuery(q) {
  */
 export function searchQuery(db, { q, dominio = null, depto = null, limit = 12 } = {}) {
   migrateSearch(db);
-  const match = ftsQuery(q);
-  if (!match) return { hits: [], facetas: { dominio: [], depto: [] }, total: 0 };
+  let match = ftsQuery(q);
+  if (!match) return { hits: [], facetas: { dominio: [], depto: [] }, total: 0, modo: "and" };
 
-  const where = ["search_fts MATCH ?"];
-  const args = [match];
-  if (dominio) { where.push("dominio = ?"); args.push(dominio); }
-  if (depto) { where.push("depto = ?"); args.push(depto); }
-  const clause = where.join(" AND ");
+  const filtros = [];
+  const filtroArgs = [];
+  if (dominio) { filtros.push("dominio = ?"); filtroArgs.push(dominio); }
+  if (depto) { filtros.push("depto = ?"); filtroArgs.push(depto); }
+  const clause = ["search_fts MATCH ?", ...filtros].join(" AND ");
+  const contar = (m) => db.prepare(`SELECT COUNT(*) c FROM search_fts WHERE ${clause}`).get(m, ...filtroArgs).c;
+
+  // AND primero (precisión); si no matchea nada, se reintenta en OR. Sin este fallback
+  // toda pregunta en lenguaje natural devuelve vacío — que es lo que rompía el RAG (M13).
+  let total = contar(match);
+  let modo = "and";
+  if (total === 0) {
+    const alterno = ftsQuery(q, { modo: "or" });
+    if (alterno && alterno !== match) {
+      const totalOr = contar(alterno);
+      if (totalOr > 0) { match = alterno; total = totalOr; modo = "or"; }
+    }
+  }
+  const args = [match, ...filtroArgs];
 
   const hits = db.prepare(`
     SELECT id_interno, dominio, depto, label, bm25(search_fts) score
@@ -123,8 +163,7 @@ export function searchQuery(db, { q, dominio = null, depto = null, limit = 12 } 
       GROUP BY depto ORDER BY n DESC LIMIT 10
     `).all(match, ...(dominio ? [dominio] : [])),
   };
-  const total = db.prepare(`SELECT COUNT(*) c FROM search_fts WHERE ${clause}`).get(...args).c;
-  return { hits, facetas, total };
+  return { hits, facetas, total, modo };
 }
 
 /** Autocompletado: labels distintos que matchean el prefijo, más frecuentes primero. */

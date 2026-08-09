@@ -1,0 +1,31 @@
+[Unit]
+Description=Operación Colombia — API OSINT + panel
+Documentation=https://github.com/FilipaoVfx/operacionColombia
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ocolombia
+Group=ocolombia
+WorkingDirectory=/opt/operacion-colombia
+# PORT, HOST y las variables de fuentes (ANM_CAPAS…) viven acá, fuera del repo.
+EnvironmentFile=/etc/operacion-colombia.env
+ExecStart=/opt/operacion-colombia/infra/deploy/run-node.sh apps/api/server.js
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# Endurecimiento: el proceso solo necesita leer el repo y escribir data/
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/operacion-colombia/data
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

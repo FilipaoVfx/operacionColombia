@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { migrate } from "../packages/metadata/registry.js";
 import {
   profileRows, registerSource, listExplorerSources, resolveSource, genericMapRow, exportSample,
+  assertDomain, assertDatasetId,
 } from "../services/socrata-explorer/index.js";
 
 function seededDb() {
@@ -11,6 +12,29 @@ function seededDb() {
   migrate(db);
   return db;
 }
+
+test("allowlist de dominios: el portal viaja a la URL que consulta el servidor → SSRF si no se valida", () => {
+  assert.equal(assertDomain("www.datos.gov.co"), "www.datos.gov.co");
+  assert.equal(assertDomain("WWW.DATOS.GOV.CO"), "www.datos.gov.co"); // normaliza
+  for (const malo of ["169.254.169.254", "localhost", "127.0.0.1:8081", "evil.com",
+                      "www.datos.gov.co.evil.com", "www.datos.gov.co@evil.com"]) {
+    assert.throws(() => assertDomain(malo), /no permitido/, `debe rechazar ${malo}`);
+  }
+});
+
+test("id de dataset: solo 4x4 alfanumérico (bloquea inyección de ruta)", () => {
+  assert.equal(assertDatasetId("jbjy-vk9h"), "jbjy-vk9h");
+  for (const malo of ["../../etc/passwd", "jbjy-vk9h/../../secret", "", "jbjy_vk9h"]) {
+    assert.throws(() => assertDatasetId(malo), /inválido/, `debe rechazar ${malo}`);
+  }
+});
+
+test("registerSource valida dominio e id: no se persiste un endpoint SSRF diferido", () => {
+  const db = seededDb();
+  assert.throws(() => registerSource(db, { id: "abcd-1234", domain: "169.254.169.254", targetDomain: "x" }), /no permitido/);
+  assert.throws(() => registerSource(db, { id: "../evil", targetDomain: "x" }), /inválido/);
+  assert.equal(listExplorerSources(db).length, 0);
+});
 
 test("profileRows: nulos/distintos/top-5 por columna + duplicados por :id", () => {
   const rows = [

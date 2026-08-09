@@ -1,0 +1,14 @@
+[Unit]
+Description=Operación Colombia — deploy por pull (fetch, tests, restart, healthcheck)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ocolombia
+Group=ocolombia
+WorkingDirectory=/opt/operacion-colombia
+EnvironmentFile=/etc/operacion-colombia.env
+ExecStart=/opt/operacion-colombia/infra/deploy/deploy.sh
+StandardOutput=journal
+StandardError=journal

@@ -71,3 +71,28 @@ test("operadores FTS del usuario no rompen la consulta", () => {
   buildSearchIndex(db);
   assert.doesNotThrow(() => searchQuery(db, { q: 'cali AND "OR( NEAR' }));
 });
+
+// M13 dependía de esto: en AND puro, una pregunta en lenguaje natural exige que TODAS
+// sus palabras estén en el mismo registro y nunca matchea nada.
+test("lenguaje natural: cae a OR sobre términos significativos cuando AND no matchea", () => {
+  const db = seededDb();
+  buildSearchIndex(db);
+
+  const and = searchQuery(db, { q: "medellin" });
+  assert.equal(and.modo, "and", "una sola palabra que matchea no usa el fallback");
+  assert.equal(and.total, 1);
+
+  const nl = searchQuery(db, { q: "cuantos habitantes tiene el municipio de Medellín" });
+  assert.equal(nl.modo, "or", "AND daría 0 → reintenta en OR");
+  assert.equal(nl.hits[0].label, "Medellín");
+
+  const nada = searchQuery(db, { q: "produccion de litio en marte" });
+  assert.equal(nada.total, 0, "el fallback no inventa resultados si nada matchea");
+});
+
+test("el filtro por depto se respeta también en el fallback OR", () => {
+  const db = seededDb();
+  buildSearchIndex(db);
+  assert.equal(searchQuery(db, { q: "que pasa en el municipio de Medellín", depto: "76" }).total, 0);
+  assert.equal(searchQuery(db, { q: "que pasa en el municipio de Medellín", depto: "05" }).total, 1);
+});

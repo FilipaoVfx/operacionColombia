@@ -19,6 +19,103 @@ function chipDeptoName(raw) {
   return CHIP_DEPTO_ALIAS[s] ?? s;
 }
 
+// ---------------------------------------------------------------------------------------
+// ANM — catastro minero (dominio `mineria`, CATALOGO §2.2)
+//
+// A diferencia de INVIAS, cuyo esquema conocemos, las capas del MapServer de la ANM no
+// comparten convención de nombres entre sí. El mapeo se declara por candidatos y se
+// resuelve contra el esquema real de cada capa en la primera fila (ver `mapRowMineria`);
+// así la misma config sirve para títulos vigentes, solicitudes o reservas estratégicas.
+//
+// Verificá el mapeo antes de ingerir:
+//   node services/arcgis-explorer/cli.js <urlServicio>
+//   node services/arcgis-explorer/cli.js <urlServicio>/<idCapa> --profile --dict mineria
+// ---------------------------------------------------------------------------------------
+export const DICCIONARIO_MINERIA = {
+  expediente: ["CODIGO_EXPEDIENTE", "EXPEDIENTE", "COD_EXPEDIENTE", "NUMERO_EXPEDIENTE", "PLACA", "CODIGO_RMN"],
+  titular: ["TITULAR", "NOMBRE_TITULAR", "TITULARES", "BENEFICIARIO", "SOLICITANTE", "RAZON_SOCIAL"],
+  documento_titular: ["DOCUMENTO_TITULAR", "DOC_TITULAR", "NIT", "IDENTIFICACION", "CEDULA_NIT"],
+  mineral: ["MINERAL", "MINERALES", "MINERAL_PRINCIPAL", "GRUPO_MINERAL", "RECURSO"],
+  estado: ["ESTADO", "ESTADO_TITULO", "ESTADO_EXPEDIENTE"],
+  etapa: ["ETAPA", "ETAPA_TITULO", "FASE"],
+  modalidad: ["MODALIDAD", "MODALIDAD_TITULO", "TIPO_TITULO", "TIPO_SOLICITUD", "TIPO"],
+  // se omite SHAPE_AREA a propósito: viene en unidades del SRID nativo (m²), no en hectáreas
+  area_ha: ["AREA_HA", "AREA_HECTAREAS", "HECTAREAS", "AREA_HAS"],
+  fecha_inscripcion: ["FECHA_INSCRIPCION", "FECHA_INSCRIP", "FECHA_SUSCRIPCION", "FECHA_INICIO"],
+  fecha_terminacion: ["FECHA_TERMINACION", "FECHA_VENCIMIENTO", "FECHA_TERMINA", "FECHA_FIN"],
+  municipio: ["MUNICIPIO", "NOMBRE_MUNICIPIO", "MUNICIPIOS", "MPIO"],
+  departamento: ["DEPARTAMENTO", "NOMBRE_DEPARTAMENTO", "DEPTO", "DPTO"],
+};
+
+// ArcGIS entrega fechas como epoch ms; en `campos` se guardan en ISO para que las
+// vistas y el search las traten igual que las de Socrata (que ya vienen ISO).
+function fechaArcgis(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  if (Number.isFinite(n) && Math.abs(n) > 1e11) return new Date(n).toISOString().slice(0, 10);
+  return String(v).slice(0, 10);
+}
+// Number(null) y Number("") son 0: sin el guardia previo, un área ausente entraría como
+// 0 ha y contaminaría todo SUM/AVG del dominio con ceros que parecen dato medido.
+const numOrNull = (v) => {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+/**
+ * mapRow del dominio minero, dirigido por esquema. Resuelve alias→campo real una sola
+ * vez por capa (memoizado en `_mapeo`) y falla ruidosamente si no encuentra la llave
+ * del expediente: preferimos una corrida rota a 3.000 registros con todo en null.
+ */
+export function mapRowMineria(feature, ctx) {
+  const p = feature.properties || {};
+  const cfg = ctx.source;
+  if (!cfg._mapeo) {
+    const { mapeo, faltantes } = ctx.suggestMapping(Object.keys(p), DICCIONARIO_MINERIA);
+    if (!mapeo.expediente) {
+      throw new Error(
+        `capa sin campo de expediente reconocible (columnas: ${Object.keys(p).slice(0, 12).join(", ")}). ` +
+        `Ampliá DICCIONARIO_MINERIA.expediente o perfilá con arcgis-explorer.`
+      );
+    }
+    if (faltantes.length) console.warn(`  · campos sin mapear en esta capa: ${faltantes.join(", ")}`);
+    cfg._mapeo = mapeo;
+  }
+  const m = cfg._mapeo;
+  const val = (k) => (m[k] ? p[m[k]] ?? null : null);
+
+  const municipio = val("municipio");
+  const departamento = val("departamento");
+  // el título puede abarcar varios municipios: si el campo trae una lista, no se
+  // resuelve a municipio único y se cae a departamento (mejor nulo que match errado)
+  const muniUnico = municipio && !/[;,/]/.test(String(municipio)) ? String(municipio).trim() : null;
+
+  return {
+    idFuente: val("expediente") ?? p.OBJECTID ?? p.objectid,
+    campos: {
+      expediente: val("expediente"),
+      titular: val("titular"),
+      documento_titular: val("documento_titular"),
+      mineral: val("mineral"),
+      estado: val("estado"),
+      etapa: val("etapa"),
+      modalidad: val("modalidad"),
+      area_ha: numOrNull(val("area_ha")),
+      fecha_inscripcion: fechaArcgis(val("fecha_inscripcion")),
+      fecha_terminacion: fechaArcgis(val("fecha_terminacion")),
+      municipio: municipio ?? null,
+      departamento: departamento ?? null,
+    },
+    extra: p,
+    geom: feature.geometry ?? null,
+    divipola: muniUnico ? { nombre: muniUnico, depto: departamento ?? undefined } : undefined,
+    deptoCode: departamento ? ctx.resolver?.resolveDepto({ nombre: departamento }) : null,
+    searchBlob: [val("expediente"), val("titular"), val("mineral"), municipio, departamento]
+      .filter(Boolean).join(" "),
+  };
+}
+
 export const SOURCES = [
   {
     id: "gdxc-w37w",
@@ -231,6 +328,42 @@ export const SOURCES = [
     },
   },
 ].map(validateSourceConfig);
+
+// ---------------------------------------------------------------------------------------
+// ANM: el MapServer publica varias capas y su numeración no es estable ni documentada,
+// así que la capa se declara por entorno en vez de fijarse a ciegas. Sin ANM_CAPAS la
+// fuente no se registra y `run --all` sigue igual que hoy.
+//
+//   node services/arcgis-explorer/cli.js "$ANM_SERVICE"            # ver capas
+//   ANM_CAPAS="3:titulos-vigentes,7:solicitudes" npm run etl        # ingerir
+// ---------------------------------------------------------------------------------------
+export const ANM_SERVICE = process.env.ANM_SERVICE
+  || "https://geo.anm.gov.co/webgis/rest/services/ANM/ServiciosANM/MapServer";
+
+export function anmSources(spec = process.env.ANM_CAPAS) {
+  if (!spec) return [];
+  return String(spec).split(",").map((par) => {
+    const [capa, slug] = par.split(":").map((s) => s.trim());
+    if (!/^\d+$/.test(capa || "")) throw new Error(`ANM_CAPAS inválido en "${par}": se espera <idCapa>[:<slug>]`);
+    return validateSourceConfig({
+      id: `anm-${slug || capa}`,
+      kind: "arcgis",
+      domain: "mineria",
+      nombre: `ANM — catastro minero, capa ${capa}${slug ? ` (${slug})` : ""}`,
+      endpoint: `${ANM_SERVICE}/${capa}`,
+      licencia: "Datos abiertos ANM (verificar términos por capa)",
+      priority: "P1",
+      schedule: "mensual",
+      // los títulos son polígonos y muchos son chicos: la generalización de 80 m
+      // calibrada para vías nacionales los colapsaría (ver arcgis.js)
+      maxAllowableOffset: Number(process.env.ANM_OFFSET ?? 0) || null,
+      orderByFields: process.env.ANM_ORDER_BY || "OBJECTID",
+      mapRow: mapRowMineria,
+    });
+  });
+}
+
+SOURCES.push(...anmSources());
 
 export function getSource(id) {
   const s = SOURCES.find((s) => s.id === id);

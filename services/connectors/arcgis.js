@@ -26,7 +26,19 @@ async function fetchJson(url, { tries = 4, timeout = 60000 } = {}) {
   throw lastErr;
 }
 
+// Un MapServer publica varias capas y no expone `fields` ni `/query`: apuntar una
+// fuente al servicio en vez de a la capa produce errores opacos. Se detecta y se avisa.
+function assertUrlDeCapa(source) {
+  if (/\/(Map|Feature)Server\/?$/i.test(String(source.endpoint).split("?")[0])) {
+    throw new Error(
+      `[${source.id}] endpoint apunta al servicio, no a una capa: agregá /<idCapa> ` +
+      `(descubrilas con: node services/arcgis-explorer/cli.js ${source.endpoint})`
+    );
+  }
+}
+
 export async function discover(source) {
+  assertUrlDeCapa(source);
   const info = await fetchJson(`${source.endpoint}?f=json`);
   const count = await fetchJson(`${source.endpoint}/query?where=1%3D1&returnCountOnly=true&f=json`);
   const esquema = (info.fields || []).map((f) => ({ name: f.name, type: f.type }));
@@ -40,7 +52,15 @@ export async function discover(source) {
 }
 
 export async function* fetch_(source, cursor = { offset: 0 }) {
+  assertUrlDeCapa(source);
   let offset = cursor.offset ?? 0;
+  // La generalización por defecto (~80 m) está calibrada para tramos viales de escala
+  // nacional. En polígonos chicos (títulos mineros, predios) ese mismo umbral los
+  // colapsa: cada fuente declara el suyo, y 0/null la desactiva.
+  const offsetGeom = source.maxAllowableOffset ?? MAX_OFFSET;
+  // El campo de OID no siempre se llama 'objectid' (OBJECTID, FID, …); ordenar por uno
+  // inexistente rompe la paginación y devuelve páginas repetidas.
+  const orderBy = source.orderByFields ?? "objectid";
   for (;;) {
     const params = new URLSearchParams({
       where: source.where || "1=1",
@@ -48,12 +68,12 @@ export async function* fetch_(source, cursor = { offset: 0 }) {
       returnGeometry: "true",
       outSR: "4326",
       geometryPrecision: String(GEOM_PRECISION),
-      maxAllowableOffset: String(MAX_OFFSET),
-      orderByFields: "objectid",
+      orderByFields: orderBy,
       resultOffset: String(offset),
       resultRecordCount: String(PAGE),
       f: "geojson",
     });
+    if (offsetGeom) params.set("maxAllowableOffset", String(offsetGeom));
     const fc = await fetchJson(`${source.endpoint}/query?${params}`);
     const feats = fc.features || [];
     if (feats.length === 0) return;

@@ -112,6 +112,20 @@ export const VIEWS = [
     `,
   },
   {
+    name: "rm_mineria_depto",
+    domain: "mineria",
+    sql: `
+      SELECT divipola_depto cod_dpto,
+             json_extract(campos,'$.mineral') mineral,
+             json_extract(campos,'$.estado')  estado,
+             COUNT(*) titulos,
+             COUNT(DISTINCT json_extract(campos,'$.titular')) titulares,
+             ROUND(SUM(json_extract(campos,'$.area_ha')), 1) area_ha
+      FROM registros WHERE dominio='mineria'
+      GROUP BY divipola_depto, mineral, estado
+    `,
+  },
+  {
     name: "rm_entidades_depto",
     domain: "entidades",
     sql: `

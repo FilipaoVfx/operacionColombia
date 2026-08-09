@@ -13,6 +13,7 @@ import { openOsintDb, MetadataRegistry, WriteStore } from "../../packages/metada
 import { buildRecord } from "../../packages/core-model/index.js";
 import { loadDivipola, DivipolaResolver } from "../../packages/divipola/index.js";
 import { resolveSource, listExplorerSources } from "../socrata-explorer/index.js";
+import { suggestMapping } from "../arcgis-explorer/index.js";
 
 const CONNECTORS = {
   socrata: assertConnector(socrata, "socrata"),
@@ -54,7 +55,9 @@ export async function runSource(db, source, { force = false } = {}) {
       try {
         for (const row of batch.rows) {
           try {
-            const m = source.mapRow(row, { resolver });
+            // ctx.source + suggestMapping habilitan mapRows dirigidos por esquema
+            // (fuentes ArcGIS cuyos nombres de campo no se conocen de antemano)
+            const m = source.mapRow(row, { resolver, source, suggestMapping });
             if (!m || m.idFuente == null) { stats.errores++; continue; }
             const divi = m.divipola ? resolver.resolveMunicipio(m.divipola) : null;
             const rec = buildRecord({

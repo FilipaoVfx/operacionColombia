@@ -30,15 +30,15 @@ const TABLE_COLS = {
   agro: [["cultivo", "Cultivo"], ["municipio", "Municipio"], ["produccion_t", "Producción (t)"], ["area_sembrada_ha", "Sembrada (ha)"]],
   contratacion: [["entidad", "Entidad"], ["proveedor", "Proveedor"], ["valor_contrato", "Valor (COP)"], ["estado", "Estado"], ["fecha_firma", "Firma"]],
   entidades: [["nit", "NIT"], ["razon_social", "Razón social"], ["departamento", "Departamento"], ["ciudad", "Ciudad"], ["telefono", "Teléfono"]],
+  mineria: [["expediente", "Expediente"], ["titular", "Titular"], ["mineral", "Mineral"], ["estado", "Estado"], ["etapa", "Etapa"], ["area_ha", "Área (ha)"], ["municipio", "Municipio"]],
 };
 // "vial" se muestra como "Infraestructura" en nav/breadcrumb: es la única fuente de infraestructura real hoy.
-const DOM_LABEL = { territorio: "Territorio", vial: "Infraestructura", economia: "Economía", agro: "Agro", contratacion: "Contratación", entidades: "Entidades" };
-const DOM_ICON = { territorio: "pin", vial: "route", economia: "chart", agro: "leaf", contratacion: "file", entidades: "users" };
+const DOM_LABEL = { territorio: "Territorio", vial: "Infraestructura", economia: "Economía", agro: "Agro", contratacion: "Contratación", entidades: "Entidades", mineria: "Minería" };
+const DOM_ICON = { territorio: "pin", vial: "route", economia: "chart", agro: "leaf", contratacion: "file", entidades: "users", mineria: "pickaxe" };
 
 // secciones del roadmap (BACKLOG_MEJORAS_OSINT.md) sin conector/API aún: nav visible,
 // vista placeholder honesta — sin inventar cifras.
 const PLACEHOLDER_META = {
-  mineria: { label: "Minería", icon: "pickaxe", note: "Requiere conector ANM (catastro minero / títulos) — no implementado." },
   conflicto: { label: "Conflicto", icon: "shield", note: "Fuente de datos de conflicto aún no conectada." },
   regalias: { label: "Regalías", icon: "coins", note: "Requiere conector SICODIS/regalías — no implementado." },
   dashboards: { label: "Dashboards", icon: "dashboard", note: "Dashboards personalizables — backlog." },
@@ -96,7 +96,7 @@ const NAV = [
       { id: "mapa", label: "Mapa", icon: "map" },
       { id: "territorio", label: DOM_LABEL.territorio, icon: DOM_ICON.territorio },
       { id: "contratacion", label: DOM_LABEL.contratacion, icon: DOM_ICON.contratacion },
-      { id: "mineria", label: PLACEHOLDER_META.mineria.label, icon: PLACEHOLDER_META.mineria.icon },
+      { id: "mineria", label: DOM_LABEL.mineria, icon: DOM_ICON.mineria },
       { id: "agro", label: DOM_LABEL.agro, icon: DOM_ICON.agro },
       { id: "vial", label: DOM_LABEL.vial, icon: DOM_ICON.vial },
       { id: "economia", label: DOM_LABEL.economia, icon: DOM_ICON.economia },
@@ -123,7 +123,7 @@ const NAV = [
   { section: "Sistema", items: [{ id: "config", label: PLACEHOLDER_META.config.label, icon: PLACEHOLDER_META.config.icon }] },
 ];
 
-const REAL_DOMAINS = ["territorio", "vial", "economia", "agro", "contratacion", "entidades"];
+const REAL_DOMAINS = ["territorio", "vial", "economia", "agro", "contratacion", "entidades", "mineria"];
 
 const VIEWS = {
   overview: { title: "Inicio", mount: mountOverview, unmount: unmountOverview },

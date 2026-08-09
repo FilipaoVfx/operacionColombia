@@ -73,7 +73,7 @@ async function main() {
     return;
   }
   const features = await sampleLayer(url, { sample: Number(args.get("sample")) || 300 });
-  const perfil = profileFeatures(features);
+  const perfil = profileFeatures(features, { campos: meta.campos });
 
   const dict = args.get("dict") === "mineria" || args.get("dict") === true ? DICCIONARIO_MINERIA : null;
   const sugerencia = dict ? suggestMapping(meta.campos, dict) : null;
@@ -89,6 +89,7 @@ async function main() {
 
   console.log(`\nCapa: ${meta.nombre}  (${meta.geometria ?? "sin geometría"})`);
   console.log(`Filas: ${meta.filas ?? "?"} · OID: ${meta.objectIdField ?? "?"} · SRID: ${meta.spatialReference ?? "?"} · maxRecordCount: ${meta.maxRecordCount ?? "?"}`);
+  console.log(`Última edición de la capa: ${meta.ultima_edicion ?? "no publicada por el servicio"}`);
   if (meta.descripcion) console.log(`Descripción: ${meta.descripcion.slice(0, 300)}`);
 
   console.log(`\n— Columnas (muestra de ${perfil.muestra}) —`);
@@ -97,7 +98,7 @@ async function main() {
     "nulos %": c.nulos_pct,
     distintos: c.distintos,
     cte: c.constante ? "sí" : "",
-    rango: c.numerica ? `${c.numerica.min}…${c.numerica.max}` : "",
+    rango: c.fechas ? `${c.fechas.desde} … ${c.fechas.hasta}` : c.numerica ? `${c.numerica.min}…${c.numerica.max}` : "",
     ejemplo: c.top[0]?.valor?.slice?.(0, 40) ?? c.top[0]?.valor ?? "",
   })));
 

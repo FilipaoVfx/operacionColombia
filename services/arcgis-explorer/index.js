@@ -65,6 +65,10 @@ export async function describeLayer(layerUrl) {
   try {
     filas = (await fetchJson(`${base}/query?where=1%3D1&returnCountOnly=true&f=json`)).count ?? null;
   } catch { /* algunas capas no permiten count; no es fatal para el perfil */ }
+  // `editingInfo.lastEditDate` es la última edición REAL de los datos de la capa.
+  // La descripción del servicio es texto estático que alguien escribió al publicarlo
+  // y no se actualiza sola: no sirve como señal de frescura.
+  const lastEdit = info.editingInfo?.lastEditDate ?? null;
   return {
     nombre: info.name ?? null,
     descripcion: info.description || null,
@@ -73,6 +77,8 @@ export async function describeLayer(layerUrl) {
     globalIdField: info.globalIdField || null,
     spatialReference: info.extent?.spatialReference?.latestWkid ?? info.extent?.spatialReference?.wkid ?? null,
     maxRecordCount: info.maxRecordCount ?? null,
+    lastEditDate: lastEdit,
+    ultima_edicion: lastEdit ? new Date(lastEdit).toISOString() : null,
     filas,
     campos: (info.fields ?? []).map((f) => ({ nombre: f.name, tipo: f.type, alias: f.alias ?? null })),
   };
@@ -108,10 +114,16 @@ function statsNumericas(valores) {
  * si es numérica, rango. Sobre la geometría: presencia y vértices (una geometría de
  * 0 vértices tras generalizar es un polígono colapsado — ver `maxAllowableOffset`).
  */
-export function profileFeatures(features, { topN = 5 } = {}) {
+export function profileFeatures(features, { topN = 5, campos = [] } = {}) {
   const props = features.map((f) => f.properties ?? {});
   const cols = new Set();
   for (const p of props) for (const k of Object.keys(p)) cols.add(k);
+
+  // ArcGIS entrega las fechas como epoch en milisegundos: mostrarlas crudas
+  // ("1104537600000…1699920000000") no dice nada. Con el tipo declarado por la
+  // capa se pueden formatear, y eso es lo que revela hasta cuándo llega el dato.
+  const esFecha = new Set(campos.filter((c) => c.tipo === "esriFieldTypeDate").map((c) => c.nombre));
+  const comoFecha = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : null);
 
   const columnas = [...cols].map((col) => {
     const valores = props.map((p) => p[col]);
@@ -121,13 +133,16 @@ export function profileFeatures(features, { topN = 5 } = {}) {
       const k = typeof v === "object" ? JSON.stringify(v) : String(v);
       conteo.set(k, (conteo.get(k) ?? 0) + 1);
     }
+    const num = statsNumericas(noVacios);
     return {
       columna: col,
       nulos_pct: props.length ? +(100 * (props.length - noVacios.length) / props.length).toFixed(1) : 0,
       distintos: conteo.size,
       // cardinalidad 1 = columna constante (candidata a descartar del modelo canónico)
       constante: conteo.size === 1,
-      numerica: statsNumericas(noVacios),
+      numerica: num,
+      // rango temporal legible: dice hasta cuándo llega realmente el dato
+      fechas: esFecha.has(col) && num ? { desde: comoFecha(num.min), hasta: comoFecha(num.max) } : null,
       top: [...conteo].sort((a, b) => b[1] - a[1]).slice(0, topN).map(([valor, n]) => ({ valor, n })),
     };
   }).sort((a, b) => a.nulos_pct - b.nulos_pct);

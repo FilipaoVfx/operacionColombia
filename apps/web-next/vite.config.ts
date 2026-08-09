@@ -7,6 +7,8 @@ import tailwindcss from "@tailwindcss/vite";
 // en el navegador, ni siquiera durante el desarrollo.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Se sirve bajo /next mientras convive con el panel actual (apps/web).
+  base: "/next/",
   server: {
     port: 5173,
     proxy: { "/api": { target: process.env.API_URL || "http://localhost:8081", changeOrigin: true } },

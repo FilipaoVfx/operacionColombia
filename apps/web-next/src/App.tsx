@@ -1,4 +1,4 @@
-import { Link, Route, Switch, useRoute } from "wouter";
+import { Link, Route, Router, Switch, useRoute } from "wouter";
 import { useMeta } from "./api/cliente";
 import { PaginaInicio } from "./pages/Inicio";
 import { PaginaEntidades } from "./pages/Entidades";
@@ -12,7 +12,18 @@ import { FechaRelativa, Numero } from "./components/base";
  * Reportes, todos sin respaldo (ni motor de detección, ni histórico, ni sesión
  * de usuario). Se incorporan cuando exista el dato que los sostenga.
  */
+// En producción el panel vive bajo /next; con el dev server de Vite, en la raíz.
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 export function App() {
+  return (
+    <Router base={BASE}>
+      <Contenido />
+    </Router>
+  );
+}
+
+function Contenido() {
   return (
     <div className="flex h-full">
       <Sidebar />

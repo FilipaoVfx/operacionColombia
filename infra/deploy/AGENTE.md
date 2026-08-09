@@ -96,6 +96,25 @@ copia el archivo de entorno, instala 5 unidades systemd, **deshabilita el
 **Verificación:** termina imprimiendo `{"ok":true,...}`. Si aborta, el mensaje dice
 exactamente qué falló; corregí eso y volvé a correrlo.
 
+### Panel nuevo (`/next`) — build manual
+
+El rediseño vive en `apps/web-next` y se sirve bajo `/next`, conviviendo con el panel
+actual en `/`. Su `dist/` **no se versiona** y el deploy automático **no lo construye**:
+`npm ci` traería más de cien paquetes al servidor que atiende el túnel público, y eso
+es una decisión aparte de desplegar la API.
+
+Mientras esa decisión no se tome, se construye a mano cuando cambie:
+
+```bash
+cd /opt/operacion-colombia
+sudo -u ocolombia npm --prefix apps/web-next ci
+sudo -u ocolombia npm --prefix apps/web-next run build
+```
+
+**Verificación:** `curl -s localhost/next/ | head -c 40` devuelve HTML. Sin build,
+`/next` responde **503 con el comando exacto** en el cuerpo — nunca un 404 mudo.
+La API y el panel actual funcionan igual con o sin este paso.
+
 ---
 
 ## 4. Configurar el entorno

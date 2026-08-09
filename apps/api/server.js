@@ -25,6 +25,8 @@ import { ask } from "../../services/ai/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = join(__dirname, "..", "web");
+// Panel nuevo (Vite). dist/ no se versiona: se construye en el servidor.
+const NEXT_DIR = join(__dirname, "..", "web-next", "dist");
 
 export function createApp(db, { webDir = WEB_DIR } = {}) {
   migrateViews(db);
@@ -535,6 +537,32 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Panel nuevo (apps/web-next) montado en /next mientras convive con el actual.
+  // Es una SPA: cualquier ruta que no sea archivo devuelve index.html para que el
+  // router del cliente resuelva. Sin build responde 503 con el comando, no 404 mudo.
+  // -------------------------------------------------------------------------
+  async function serveNext(req, res, pathname) {
+    const rel = pathname.slice("/next".length) || "/";
+    const candidato = join(NEXT_DIR, normalize(rel).replace(/^(\.\.[/\\])+/, ""));
+    if (!candidato.startsWith(NEXT_DIR)) return send(req, res, 403, "Forbidden", "text/plain");
+
+    const esArchivo = extname(candidato) !== "";
+    try {
+      const file = esArchivo ? candidato : join(NEXT_DIR, "index.html");
+      // los assets llevan hash en el nombre: inmutables. El HTML nunca se cachea.
+      const cache = esArchivo && /-[A-Za-z0-9_]{8,}\./.test(candidato)
+        ? "public, max-age=31536000, immutable"
+        : "no-cache";
+      send(req, res, 200, await readFile(file), MIME[extname(file)] || "application/octet-stream", { "Cache-Control": cache });
+    } catch {
+      if (esArchivo) return send(req, res, 404, "Not Found", "text/plain");
+      send(req, res, 503,
+        "Panel nuevo sin construir. En el servidor: npm --prefix apps/web-next ci && npm --prefix apps/web-next run build",
+        "text/plain; charset=utf-8");
+    }
+  }
+
   const metrics = new Metrics();
   const log = createLogger("api");
 
@@ -667,6 +695,7 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       }
       if (path.startsWith("/api/")) return sendJson(req, res, { error: "ruta no encontrada" }, { status: 404 });
 
+      if (path === "/next" || path.startsWith("/next/")) return serveNext(req, res, path);
       return serveStatic(req, res, path);
     } catch (err) {
       log.error("error interno", { url: req.url, detail: String(err.message) });

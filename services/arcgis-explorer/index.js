@@ -47,8 +47,11 @@ export async function listLayers(serviceUrl) {
     capas: capas.map((l) => ({
       id: l.id,
       nombre: l.name,
-      tipo: l.type ?? null,               // 'Feature Layer' | 'Table'
+      tipo: l.type ?? null,               // 'Feature Layer' | 'Group Layer' | 'Table'
       geometria: l.geometryType ?? null,
+      // Los Group Layer son contenedores: no declaran campos ni aceptan /query.
+      // Marcarlos evita que alguien intente perfilarlos y reciba un error opaco.
+      consultable: l.type !== "Group Layer",
       url: `${base}/${l.id}`,
     })),
   };

@@ -63,6 +63,15 @@ async function main() {
   }
 
   const meta = await describeLayer(url);
+  if (!meta.campos.length) {
+    console.error(
+      `\nLa capa "${meta.nombre ?? url}" no declara campos: casi seguro es un Group Layer ` +
+      `(un contenedor, no una capa de datos). Elegí una de tipo 'Feature Layer' del listado:\n` +
+      `  npm run anm\n`
+    );
+    process.exitCode = 1;
+    return;
+  }
   const features = await sampleLayer(url, { sample: Number(args.get("sample")) || 300 });
   const perfil = profileFeatures(features);
 

@@ -123,13 +123,38 @@ export class EntityResolver {
     `).run(idEntidad, idInterno, metodo, confianza);
   }
 
+  /**
+   * Nombre oficial de una entidad territorial. DIVIPOLA es la tabla maestra (M3):
+   * el nombre que traiga la fuente es incidental y puede faltar, el código no.
+   * No es inferencia — es leer el nombre en el registro autoritativo.
+   */
+  #nombreOficial(tipo, claveTipo, claveValor) {
+    if (claveTipo !== "codigo") return null;
+    try {
+      if (tipo === "Departamento") {
+        return this.db.prepare("SELECT dpto FROM divipola WHERE cod_dpto=? LIMIT 1")
+          .get(String(claveValor).padStart(2, "0"))?.dpto ?? null;
+      }
+      if (tipo === "Municipio") {
+        return this.db.prepare("SELECT nom_mpio FROM divipola WHERE cod_mpio=?")
+          .get(String(claveValor).padStart(5, "0"))?.nom_mpio ?? null;
+      }
+    } catch { /* divipola aún sin poblar: se usa lo que traiga la fuente */ }
+    return null;
+  }
+
   #create(tipo, claveTipo, claveValor, ref, nombreNorm) {
     const id = `${tipo}:${claveTipo}:${claveValor}`;
+    const nombre = this.#nombreOficial(tipo, claveTipo, claveValor) ?? ref.nombre ?? null;
     this.db.prepare(`
       INSERT INTO entidades (id_entidad, tipo, nombre_canonico, nombre_norm, clave_tipo, clave_valor, atributos, creado_en)
       VALUES (?,?,?,?,?,?,?,?)
-      ON CONFLICT(id_entidad) DO NOTHING
-    `).run(id, tipo, ref.nombre ?? null, nombreNorm, claveTipo, String(claveValor),
+      ON CONFLICT(id_entidad) DO UPDATE SET
+        -- solo rellena huecos: si la primera aparición vino sin nombre y una
+        -- posterior lo trae, la entidad deja de quedar anónima. Nunca sobreescribe.
+        nombre_canonico = COALESCE(entidades.nombre_canonico, excluded.nombre_canonico),
+        nombre_norm     = COALESCE(entidades.nombre_norm, excluded.nombre_norm)
+    `).run(id, tipo, nombre, nombre ? normName(nombre) : nombreNorm, claveTipo, String(claveValor),
            ref.atributos ? JSON.stringify(ref.atributos) : null, new Date().toISOString());
     return id;
   }

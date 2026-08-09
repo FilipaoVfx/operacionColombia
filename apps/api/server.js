@@ -257,6 +257,140 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     };
   }
 
+  // -------------------------------------------------------------------------
+  // Entidades (M6). El grafo ya las consume por id, pero no había forma de
+  // listarlas ni de abrir una: es el objeto sobre el que se investiga.
+  // Todo lo que se devuelve sale de entidad_registros → registros; nada se
+  // infiere ni se puntúa.
+  // -------------------------------------------------------------------------
+  const TIPOS_ENTIDAD = new Set(["Empresa", "EntidadPublica", "Contrato", "Municipio", "Departamento", "TramoVial"]);
+
+  /** Departamentos donde la entidad tiene registros, ordenados por volumen. */
+  function territoriosDe(ids) {
+    if (!ids.length) return new Map();
+    const marks = ids.map(() => "?").join(",");
+    const rows = prep(`
+      SELECT er.id_entidad, r.divipola_depto cod,
+             (SELECT dpto FROM divipola d WHERE d.cod_dpto=r.divipola_depto LIMIT 1) nombre,
+             COUNT(*) n
+      FROM entidad_registros er JOIN registros r ON r.id_interno = er.id_interno
+      WHERE er.id_entidad IN (${marks}) AND r.divipola_depto IS NOT NULL
+      GROUP BY er.id_entidad, r.divipola_depto ORDER BY n DESC
+    `).all(...ids);
+    const out = new Map();
+    for (const r of rows) {
+      if (!out.has(r.id_entidad)) out.set(r.id_entidad, []);
+      out.get(r.id_entidad).push({ cod: r.cod, nombre: r.nombre, registros: r.n });
+    }
+    return out;
+  }
+
+  function handleEntidades(qp) {
+    const tipo = TIPOS_ENTIDAD.has(qp.get("tipo")) ? qp.get("tipo") : null;
+    const depto = /^\d{2}$/.test(qp.get("depto") || "") ? qp.get("depto") : null;
+    const dominio = DOMINIOS.has(qp.get("dominio")) ? qp.get("dominio") : null;
+    const q = (qp.get("q") || "").trim();
+    const limit = Math.min(parseInt(qp.get("limit"), 10) || 50, 500);
+    const offset = Math.min(Math.max(parseInt(qp.get("offset"), 10) || 0, 0), 100_000);
+
+    const where = ["1=1"], args = [];
+    if (tipo) { where.push("e.tipo = ?"); args.push(tipo); }
+    if (q) { where.push("e.nombre_norm LIKE ?"); args.push(`%${normName(q)}%`); }
+    if (depto) { where.push("r.divipola_depto = ?"); args.push(depto); }
+    if (dominio) { where.push("r.dominio = ?"); args.push(dominio); }
+    const clause = where.join(" AND ");
+
+    const total = prep(`
+      SELECT COUNT(*) c FROM (
+        SELECT e.id_entidad FROM entidades e
+        JOIN entidad_registros er ON er.id_entidad = e.id_entidad
+        JOIN registros r ON r.id_interno = er.id_interno
+        WHERE ${clause} GROUP BY e.id_entidad)
+    `).get(...args).c;
+
+    const items = prep(`
+      SELECT e.id_entidad, e.tipo, e.nombre_canonico, e.clave_tipo, e.clave_valor,
+             COUNT(DISTINCT er.id_interno) registros,
+             COUNT(DISTINCT r.fuente)      fuentes,
+             COUNT(DISTINCT r.dominio)     dominios,
+             MAX(r.fecha_ingesta)          ultima_ingesta
+      FROM entidades e
+      JOIN entidad_registros er ON er.id_entidad = e.id_entidad
+      JOIN registros r ON r.id_interno = er.id_interno
+      WHERE ${clause}
+      GROUP BY e.id_entidad
+      ORDER BY registros DESC, e.nombre_canonico
+      LIMIT ? OFFSET ?
+    `).all(...args, limit, offset);
+
+    const terr = territoriosDe(items.map((i) => i.id_entidad));
+    return {
+      total, limit, offset,
+      filtros: { tipo, depto, dominio, q: q || null },
+      items: items.map((i) => ({ ...i, territorios: terr.get(i.id_entidad) ?? [] })),
+    };
+  }
+
+  function handleEntidadById(id) {
+    const e = prep("SELECT * FROM entidades WHERE id_entidad=?").get(id);
+    if (!e) return null;
+
+    // procedencia de la resolución: con qué método y confianza se ligó cada registro (M6)
+    const vinculos = prep(`
+      SELECT metodo, ROUND(AVG(confianza), 2) confianza, COUNT(*) n
+      FROM entidad_registros WHERE id_entidad=? GROUP BY metodo ORDER BY n DESC
+    `).all(id);
+
+    const fuentes = prep(`
+      SELECT r.fuente, r.fuente_url, r.dominio, COUNT(*) registros, MAX(r.fecha_ingesta) ultima_ingesta
+      FROM entidad_registros er JOIN registros r ON r.id_interno = er.id_interno
+      WHERE er.id_entidad=? GROUP BY r.fuente, r.dominio ORDER BY registros DESC
+    `).all(id);
+
+    const relaciones = prep(`
+      SELECT a.tipo, a.peso, a.muestra,
+             CASE WHEN a.src=? THEN a.dst ELSE a.src END otro_id,
+             o.tipo otro_tipo, o.nombre_canonico otro_nombre
+      FROM grafo_aristas a
+      JOIN entidades o ON o.id_entidad = CASE WHEN a.src=? THEN a.dst ELSE a.src END
+      WHERE a.src=? OR a.dst=?
+      ORDER BY a.peso DESC LIMIT 200
+    `).all(id, id, id, id);
+
+    return {
+      id_entidad: e.id_entidad,
+      tipo: e.tipo,
+      nombre: e.nombre_canonico,
+      clave: { tipo: e.clave_tipo, valor: e.clave_valor },
+      atributos: JSON.parse(e.atributos || "{}"),
+      creado_en: e.creado_en,
+      alias: prep("SELECT alias_norm, origen FROM entidad_alias WHERE id_entidad=?").all(id),
+      territorios: territoriosDe([id]).get(id) ?? [],
+      fuentes,
+      vinculos,
+      relaciones,
+      registros_total: prep("SELECT COUNT(*) c FROM entidad_registros WHERE id_entidad=?").get(id).c,
+    };
+  }
+
+  /** Registros que respaldan a la entidad: la evidencia, paginada. */
+  function handleEntidadRegistros(id, qp) {
+    const limit = Math.min(parseInt(qp.get("limit"), 10) || 25, 500);
+    const offset = Math.min(Math.max(parseInt(qp.get("offset"), 10) || 0, 0), 100_000);
+    const total = prep("SELECT COUNT(*) c FROM entidad_registros WHERE id_entidad=?").get(id).c;
+    const rows = prep(`
+      SELECT r.id_interno, r.dominio, r.fuente, r.fuente_url, r.divipola_muni, r.divipola_depto,
+             r.fecha_ingesta, r.campos, er.metodo, er.confianza
+      FROM entidad_registros er JOIN registros r ON r.id_interno = er.id_interno
+      WHERE er.id_entidad=? ORDER BY r.fecha_ingesta DESC, r.id_interno
+      LIMIT ? OFFSET ?
+    `).all(id, limit, offset);
+    return {
+      total, limit, offset,
+      items: rows.map((r) => ({ ...parseRow(r), metodo: r.metodo, confianza: r.confianza })),
+    };
+  }
+
   // search: query router → índice FTS (M7); fallback LIKE si el índice está vacío
   function handleSearch(qp) {
     const q = qp.get("q") || "";
@@ -479,6 +613,24 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
           const cfg = registerSource(db, body);
           return sendJson(req, res, { ok: true, fuente: { id: cfg.id, nombre: cfg.nombre, domain: cfg.domain, schedule: cfg.schedule } }, { status: 201 });
         } catch (e) { return sendJson(req, res, { error: "registro inválido", detail: String(e.message) }, { status: 400 }); }
+      }
+
+      // M6 — entidades: listado, ficha y evidencia que la respalda
+      if (path === "/api/entidades") {
+        return sendCachedJson(req, res, cacheKey, () => handleEntidades(qp), { maxAge: 300 });
+      }
+      if (path.startsWith("/api/entidades/")) {
+        const resto = decodeURIComponent(path.slice("/api/entidades/".length));
+        if (resto.endsWith("/registros")) {
+          const id = resto.slice(0, -"/registros".length);
+          if (!prep("SELECT 1 FROM entidades WHERE id_entidad=?").get(id)) {
+            return sendJson(req, res, { error: "entidad no encontrada" }, { status: 404 });
+          }
+          return sendCachedJson(req, res, cacheKey, () => handleEntidadRegistros(id, qp), { maxAge: 300 });
+        }
+        const ent = handleEntidadById(resto);
+        if (!ent) return sendJson(req, res, { error: "entidad no encontrada" }, { status: 404 });
+        return sendCachedJson(req, res, cacheKey, () => ent, { maxAge: 300 });
       }
 
       if (path.startsWith("/api/registros/")) {

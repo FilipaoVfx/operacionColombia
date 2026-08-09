@@ -131,6 +131,9 @@ Lo que hay que revisar sí o sí:
   `main`, cambialo acá o el deploy automático te va a bajar `main`.
 - **`OC_ALLOWED_TEST_FAILURES`** — `0`: cualquier test rojo revierte el deploy. Subilo
   solo para deuda declarada y con el rojo identificado, nunca como atajo.
+- **`OC_BUILD_HEAP`** — límite de heap para el build del panel (por defecto
+  `--max-old-space-size=384`). En un VPS chico, un build sin techo compite con la RAM
+  del servicio.
 - **`EXPLORER_ADMIN_TOKEN`** — sin él, `POST /api/explorer/register` responde 503. La
   escritura falla cerrada a propósito: ese endpoint alimenta el scheduler del ETL.
 - **`ANM_CAPAS`** — vacío por defecto. Sin esto, el dominio minería no se ingiere

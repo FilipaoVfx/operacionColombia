@@ -51,6 +51,26 @@ if [ "$FAILED" -gt "$ALLOWED_FAILURES" ]; then
 fi
 log "tests ok ($FAILED fallas, permitidas $ALLOWED_FAILURES)"
 
+# apps/web-next es React+Vite: sin `dist` construido la API responde 503 en /next.
+# El código llega por git, pero el build no viaja (dist está en .gitignore), así que
+# hay que hacerlo acá. Solo cuando cambió algo suyo o cuando falta el dist.
+NEXT_DIR="apps/web-next"
+if [ -f "$NEXT_DIR/package.json" ]; then
+  if [ ! -d "$NEXT_DIR/dist" ] || ! git diff --quiet "$PREV" "$NEXT" -- "$NEXT_DIR"; then
+    log "construyendo el panel $NEXT_DIR"
+    if ! npm --prefix "$NEXT_DIR" ci --no-audit --no-fund --silent; then
+      git reset --hard --quiet "$PREV"; die "npm ci de $NEXT_DIR falló; revertido a ${PREV:0:8}"
+    fi
+    # el VPS es chico: acotar el heap evita que el build se lleve puesta la RAM del servicio
+    if ! NODE_OPTIONS="${OC_BUILD_HEAP:---max-old-space-size=384}" npm --prefix "$NEXT_DIR" run build; then
+      git reset --hard --quiet "$PREV"; die "build de $NEXT_DIR falló; revertido a ${PREV:0:8}"
+    fi
+    log "panel construido"
+  else
+    log "$NEXT_DIR sin cambios — se reusa el dist existente"
+  fi
+fi
+
 log "reiniciando $SERVICE"
 sudo -n systemctl restart "$SERVICE" || die "no pude reiniciar $SERVICE"
 

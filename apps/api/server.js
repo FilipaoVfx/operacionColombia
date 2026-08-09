@@ -25,6 +25,8 @@ import { ask } from "../../services/ai/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = join(__dirname, "..", "web");
+// Panel nuevo (Vite). dist/ no se versiona: se construye en el servidor.
+const NEXT_DIR = join(__dirname, "..", "web-next", "dist");
 
 export function createApp(db, { webDir = WEB_DIR } = {}) {
   migrateViews(db);
@@ -257,6 +259,156 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     };
   }
 
+  // -------------------------------------------------------------------------
+  // Entidades (M6). El grafo ya las consume por id, pero no había forma de
+  // listarlas ni de abrir una: es el objeto sobre el que se investiga.
+  // Todo lo que se devuelve sale de entidad_registros → registros; nada se
+  // infiere ni se puntúa.
+  // -------------------------------------------------------------------------
+  const TIPOS_ENTIDAD = new Set(["Empresa", "EntidadPublica", "Contrato", "Municipio", "Departamento", "TramoVial"]);
+
+  /** Departamentos donde la entidad tiene registros, ordenados por volumen. */
+  function territoriosDe(ids) {
+    if (!ids.length) return new Map();
+    const marks = ids.map(() => "?").join(",");
+    const rows = prep(`
+      SELECT er.id_entidad, r.divipola_depto cod,
+             (SELECT dpto FROM divipola d WHERE d.cod_dpto=r.divipola_depto LIMIT 1) nombre,
+             COUNT(*) n
+      FROM entidad_registros er JOIN registros r ON r.id_interno = er.id_interno
+      WHERE er.id_entidad IN (${marks}) AND r.divipola_depto IS NOT NULL
+      GROUP BY er.id_entidad, r.divipola_depto ORDER BY n DESC
+    `).all(...ids);
+    const out = new Map();
+    for (const r of rows) {
+      if (!out.has(r.id_entidad)) out.set(r.id_entidad, []);
+      out.get(r.id_entidad).push({ cod: r.cod, nombre: r.nombre, registros: r.n });
+    }
+    return out;
+  }
+
+  function handleEntidades(qp) {
+    const tipo = TIPOS_ENTIDAD.has(qp.get("tipo")) ? qp.get("tipo") : null;
+    const depto = /^\d{2}$/.test(qp.get("depto") || "") ? qp.get("depto") : null;
+    const dominio = DOMINIOS.has(qp.get("dominio")) ? qp.get("dominio") : null;
+    const q = (qp.get("q") || "").trim();
+    const limit = Math.min(parseInt(qp.get("limit"), 10) || 50, 500);
+    const offset = Math.min(Math.max(parseInt(qp.get("offset"), 10) || 0, 0), 100_000);
+
+    const where = ["1=1"], args = [];
+    if (tipo) { where.push("e.tipo = ?"); args.push(tipo); }
+    if (q) { where.push("e.nombre_norm LIKE ?"); args.push(`%${normName(q)}%`); }
+    if (depto) { where.push("r.divipola_depto = ?"); args.push(depto); }
+    if (dominio) { where.push("r.dominio = ?"); args.push(dominio); }
+    const clause = where.join(" AND ");
+
+    const total = prep(`
+      SELECT COUNT(*) c FROM (
+        SELECT e.id_entidad FROM entidades e
+        JOIN entidad_registros er ON er.id_entidad = e.id_entidad
+        JOIN registros r ON r.id_interno = er.id_interno
+        WHERE ${clause} GROUP BY e.id_entidad)
+    `).get(...args).c;
+
+    const items = prep(`
+      SELECT e.id_entidad, e.tipo, e.nombre_canonico, e.clave_tipo, e.clave_valor,
+             COUNT(DISTINCT er.id_interno) registros,
+             COUNT(DISTINCT r.fuente)      fuentes,
+             COUNT(DISTINCT r.dominio)     dominios,
+             MAX(r.fecha_ingesta)          ultima_ingesta
+      FROM entidades e
+      JOIN entidad_registros er ON er.id_entidad = e.id_entidad
+      JOIN registros r ON r.id_interno = er.id_interno
+      WHERE ${clause}
+      GROUP BY e.id_entidad
+      ORDER BY registros DESC, e.nombre_canonico
+      LIMIT ? OFFSET ?
+    `).all(...args, limit, offset);
+
+    // Faceta por tipo: mismo criterio que las de /api/search — se aplica todo el
+    // filtro MENOS el propio, para que la faceta muestre a dónde se puede ir.
+    const whereSinTipo = ["1=1"], argsSinTipo = [];
+    if (q) { whereSinTipo.push("e.nombre_norm LIKE ?"); argsSinTipo.push(`%${normName(q)}%`); }
+    if (depto) { whereSinTipo.push("r.divipola_depto = ?"); argsSinTipo.push(depto); }
+    if (dominio) { whereSinTipo.push("r.dominio = ?"); argsSinTipo.push(dominio); }
+    const porTipo = prep(`
+      SELECT tipo, COUNT(*) n FROM (
+        SELECT e.tipo FROM entidades e
+        JOIN entidad_registros er ON er.id_entidad = e.id_entidad
+        JOIN registros r ON r.id_interno = er.id_interno
+        WHERE ${whereSinTipo.join(" AND ")} GROUP BY e.id_entidad, e.tipo)
+      GROUP BY tipo ORDER BY n DESC
+    `).all(...argsSinTipo);
+
+    const terr = territoriosDe(items.map((i) => i.id_entidad));
+    return {
+      total, limit, offset,
+      filtros: { tipo, depto, dominio, q: q || null },
+      facetas: { tipo: porTipo },
+      items: items.map((i) => ({ ...i, territorios: terr.get(i.id_entidad) ?? [] })),
+    };
+  }
+
+  function handleEntidadById(id) {
+    const e = prep("SELECT * FROM entidades WHERE id_entidad=?").get(id);
+    if (!e) return null;
+
+    // procedencia de la resolución: con qué método y confianza se ligó cada registro (M6)
+    const vinculos = prep(`
+      SELECT metodo, ROUND(AVG(confianza), 2) confianza, COUNT(*) n
+      FROM entidad_registros WHERE id_entidad=? GROUP BY metodo ORDER BY n DESC
+    `).all(id);
+
+    const fuentes = prep(`
+      SELECT r.fuente, r.fuente_url, r.dominio, COUNT(*) registros, MAX(r.fecha_ingesta) ultima_ingesta
+      FROM entidad_registros er JOIN registros r ON r.id_interno = er.id_interno
+      WHERE er.id_entidad=? GROUP BY r.fuente, r.dominio ORDER BY registros DESC
+    `).all(id);
+
+    const relaciones = prep(`
+      SELECT a.tipo, a.peso, a.muestra,
+             CASE WHEN a.src=? THEN a.dst ELSE a.src END otro_id,
+             o.tipo otro_tipo, o.nombre_canonico otro_nombre
+      FROM grafo_aristas a
+      JOIN entidades o ON o.id_entidad = CASE WHEN a.src=? THEN a.dst ELSE a.src END
+      WHERE a.src=? OR a.dst=?
+      ORDER BY a.peso DESC LIMIT 200
+    `).all(id, id, id, id);
+
+    return {
+      id_entidad: e.id_entidad,
+      tipo: e.tipo,
+      nombre: e.nombre_canonico,
+      clave: { tipo: e.clave_tipo, valor: e.clave_valor },
+      atributos: JSON.parse(e.atributos || "{}"),
+      creado_en: e.creado_en,
+      alias: prep("SELECT alias_norm, origen FROM entidad_alias WHERE id_entidad=?").all(id),
+      territorios: territoriosDe([id]).get(id) ?? [],
+      fuentes,
+      vinculos,
+      relaciones,
+      registros_total: prep("SELECT COUNT(*) c FROM entidad_registros WHERE id_entidad=?").get(id).c,
+    };
+  }
+
+  /** Registros que respaldan a la entidad: la evidencia, paginada. */
+  function handleEntidadRegistros(id, qp) {
+    const limit = Math.min(parseInt(qp.get("limit"), 10) || 25, 500);
+    const offset = Math.min(Math.max(parseInt(qp.get("offset"), 10) || 0, 0), 100_000);
+    const total = prep("SELECT COUNT(*) c FROM entidad_registros WHERE id_entidad=?").get(id).c;
+    const rows = prep(`
+      SELECT r.id_interno, r.dominio, r.fuente, r.fuente_url, r.divipola_muni, r.divipola_depto,
+             r.fecha_ingesta, r.campos, er.metodo, er.confianza
+      FROM entidad_registros er JOIN registros r ON r.id_interno = er.id_interno
+      WHERE er.id_entidad=? ORDER BY r.fecha_ingesta DESC, r.id_interno
+      LIMIT ? OFFSET ?
+    `).all(id, limit, offset);
+    return {
+      total, limit, offset,
+      items: rows.map((r) => ({ ...parseRow(r), metodo: r.metodo, confianza: r.confianza })),
+    };
+  }
+
   // search: query router → índice FTS (M7); fallback LIKE si el índice está vacío
   function handleSearch(qp) {
     const q = qp.get("q") || "";
@@ -385,6 +537,32 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Panel nuevo (apps/web-next) montado en /next mientras convive con el actual.
+  // Es una SPA: cualquier ruta que no sea archivo devuelve index.html para que el
+  // router del cliente resuelva. Sin build responde 503 con el comando, no 404 mudo.
+  // -------------------------------------------------------------------------
+  async function serveNext(req, res, pathname) {
+    const rel = pathname.slice("/next".length) || "/";
+    const candidato = join(NEXT_DIR, normalize(rel).replace(/^(\.\.[/\\])+/, ""));
+    if (!candidato.startsWith(NEXT_DIR)) return send(req, res, 403, "Forbidden", "text/plain");
+
+    const esArchivo = extname(candidato) !== "";
+    try {
+      const file = esArchivo ? candidato : join(NEXT_DIR, "index.html");
+      // los assets llevan hash en el nombre: inmutables. El HTML nunca se cachea.
+      const cache = esArchivo && /-[A-Za-z0-9_]{8,}\./.test(candidato)
+        ? "public, max-age=31536000, immutable"
+        : "no-cache";
+      send(req, res, 200, await readFile(file), MIME[extname(file)] || "application/octet-stream", { "Cache-Control": cache });
+    } catch {
+      if (esArchivo) return send(req, res, 404, "Not Found", "text/plain");
+      send(req, res, 503,
+        "Panel nuevo sin construir. En el servidor: npm --prefix apps/web-next ci && npm --prefix apps/web-next run build",
+        "text/plain; charset=utf-8");
+    }
+  }
+
   const metrics = new Metrics();
   const log = createLogger("api");
 
@@ -481,6 +659,24 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
         } catch (e) { return sendJson(req, res, { error: "registro inválido", detail: String(e.message) }, { status: 400 }); }
       }
 
+      // M6 — entidades: listado, ficha y evidencia que la respalda
+      if (path === "/api/entidades") {
+        return sendCachedJson(req, res, cacheKey, () => handleEntidades(qp), { maxAge: 300 });
+      }
+      if (path.startsWith("/api/entidades/")) {
+        const resto = decodeURIComponent(path.slice("/api/entidades/".length));
+        if (resto.endsWith("/registros")) {
+          const id = resto.slice(0, -"/registros".length);
+          if (!prep("SELECT 1 FROM entidades WHERE id_entidad=?").get(id)) {
+            return sendJson(req, res, { error: "entidad no encontrada" }, { status: 404 });
+          }
+          return sendCachedJson(req, res, cacheKey, () => handleEntidadRegistros(id, qp), { maxAge: 300 });
+        }
+        const ent = handleEntidadById(resto);
+        if (!ent) return sendJson(req, res, { error: "entidad no encontrada" }, { status: 404 });
+        return sendCachedJson(req, res, cacheKey, () => ent, { maxAge: 300 });
+      }
+
       if (path.startsWith("/api/registros/")) {
         const rec = handleRegistroById(decodeURIComponent(path.slice("/api/registros/".length)));
         if (!rec) return sendJson(req, res, { error: "no encontrado" }, { status: 404 });
@@ -499,6 +695,7 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       }
       if (path.startsWith("/api/")) return sendJson(req, res, { error: "ruta no encontrada" }, { status: 404 });
 
+      if (path === "/next" || path.startsWith("/next/")) return serveNext(req, res, path);
       return serveStatic(req, res, path);
     } catch (err) {
       log.error("error interno", { url: req.url, detail: String(err.message) });

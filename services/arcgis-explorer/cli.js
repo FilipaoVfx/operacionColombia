@@ -11,7 +11,7 @@ import {
   listLayers, describeLayer, sampleLayer, profileFeatures,
   suggestMapping, coberturaTerritorial, esUrlDeServicio,
 } from "./index.js";
-import { DICCIONARIO_MINERIA } from "../connectors/sources.config.js";
+import { DICCIONARIO_MINERIA, ANM_SERVICE } from "../connectors/sources.config.js";
 import { openOsintDb } from "../../packages/metadata/registry.js";
 import { DivipolaResolver } from "../../packages/divipola/index.js";
 
@@ -25,18 +25,31 @@ function resolverOpcional() {
 }
 
 async function main() {
-  const [url, ...rest] = process.argv.slice(2);
-  if (!url) {
-    console.log("uso: cli.js <urlServicioOCapa> [--profile] [--sample N] [--dict mineria] [--json]");
-    process.exitCode = 1;
-    return;
-  }
+  // Los flags y el destino pueden venir en cualquier orden: `npm run x -- 3`
+  // los deja DESPUÉS de los del script, así que no se puede asumir posición.
+  const argv = process.argv.slice(2);
   const args = new Map();
-  for (let i = 0; i < rest.length; i++) {
-    if (rest[i].startsWith("--")) {
-      args.set(rest[i].slice(2), rest[i + 1]?.startsWith("--") || rest[i + 1] === undefined ? true : rest[++i]);
-    }
+  const libres = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith("--")) { libres.push(a); continue; }
+    const sig = argv[i + 1];
+    args.set(a.slice(2), sig === undefined || sig.startsWith("--") ? true : argv[++i]);
   }
+
+  // Pegar una URL entre comillas en una terminal es frágil: si el editor las
+  // convierte en entidades HTML, bash parte el comando por el `&` y ejecuta
+  // pedazos sueltos. Por eso el destino es opcional y admite solo el id de capa:
+  //   cli.js                 → capas de ANM_SERVICE
+  //   cli.js 3 --profile     → perfila la capa 3 de ANM_SERVICE
+  //   cli.js <url> --profile → cualquier otro servicio ArcGIS
+  let url = libres[0];
+  if (!url || /^\d+$/.test(url)) {
+    const base = ANM_SERVICE.replace(/\/$/, "");
+    url = url ? `${base}/${url}` : base;
+    if (!args.has("json")) console.log(`(usando ANM_SERVICE: ${url})`);
+  }
+
   const json = args.has("json");
 
   if (esUrlDeServicio(url) || !args.has("profile")) {
@@ -45,7 +58,7 @@ async function main() {
     console.log(`\nServicio: ${out.servicio ?? "(sin descripción)"}`);
     console.log(`SRID nativo: ${out.spatialReference ?? "?"} · maxRecordCount: ${out.maxRecordCount ?? "?"}\n`);
     console.table(out.capas.map((c) => ({ id: c.id, nombre: c.nombre, tipo: c.tipo, geometria: c.geometria })));
-    console.log("\nPerfilá una capa con:  cli.js <url>/<id> --profile\n");
+    console.log("\nPerfilá una capa con:  npm run anm:perfil -- <id>\n");
     return;
   }
 

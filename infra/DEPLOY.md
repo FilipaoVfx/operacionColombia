@@ -32,6 +32,12 @@ La API sirve `/api/*` y el panel (`apps/web/`) desde el mismo proceso, como usua
 
 Los archivos viven en [`deploy/systemd/`](deploy/systemd/) y los instala el bootstrap.
 
+> **El ETL corre por el orquestador, no por el conector.** `connectors run --all` solo
+> ingiere: se salta la cola M5 y con ella el fan-out que reconstruye vistas (M8),
+> entidades (M6), grafo (M12), search (M7) y bbox. Con esa unidad mal puesta el panel
+> sirve datos frescos sobre agregados viejos y el grafo queda vacío — ya pasó en el
+> servidor. `orchestrator/cli.js tick` corre el scheduler y drena la cola.
+
 ## Modelo de despliegue: pull
 
 El VPS trae los cambios desde GitHub por su cuenta. **Nada necesita acceso entrante al
@@ -71,8 +77,9 @@ ruta, corridas ETL) y **Datasets** (filas y frescura por fuente).
 - **2026-07-06 (piloto vial, `src/server.js`):** `/api/health` 200 con 660 tramos;
   panel 200 vía nginx; `/api/kpi` MISS 4.8 ms → HIT 0.6 ms; ETL 3 fuentes
   (divipola 1122, PIB 16302, INVIAS 661), segunda corrida = skip total.
-- **Plataforma (`apps/api/server.js`):** pendiente de verificación en el servidor.
-  En local responde `/api/health` y `/api/status` y sirve el panel desde `apps/web/`.
-  Los scripts de `deploy/` se probaron en sintaxis y en su lógica de decisión
-  (detección de node:sqlite, parseo del resultado de tests, caso "sin cambios"),
-  no contra un Ubuntu real.
+- **2026-08-09 (plataforma en el servidor):** panel y API 200 vía nginx; `/api/status`
+  MISS → HIT tras declarar TTL por endpoint; ETL migrado al orquestador y backfill del
+  fan-out ejecutado (grafo 0 → **49 886 aristas**, search 47 121 → 49 456, vistas
+  reconstruidas); SSRF del explorer cerrado (`?domain=169.254.169.254` → 400) y
+  `register` exigiendo `X-Admin-Token` (401 sin él, 201 con él).
+- **Pendiente:** rate-limit y CORS en la Read API.

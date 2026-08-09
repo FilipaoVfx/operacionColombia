@@ -10,9 +10,8 @@ APP_DIR="${OC_APP_DIR:-/opt/operacion-colombia}"
 BRANCH="${OC_BRANCH:-main}"
 SERVICE="${OC_SERVICE:-operacion-colombia}"
 HEALTH_URL="${OC_HEALTH_URL:-http://127.0.0.1:8081/api/health}"
-# La rama arrastra 1 test rojo preexistente (test/ai.test.js, retrieval del RAG).
-# Se declara explícitamente en vez de desactivar la verificación entera; bajar a 0
-# en cuanto ese bug se corrija.
+# Válvula para deuda declarada: un rojo conocido no debería obligar a desactivar la
+# verificación entera. Hoy la suite está en verde, así que el default es 0.
 ALLOWED_FAILURES="${OC_ALLOWED_TEST_FAILURES:-0}"
 
 log() { printf '[deploy %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }

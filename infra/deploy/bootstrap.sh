@@ -104,7 +104,7 @@ cat <<EOF
 
 Listo. La base está vacía: hasta correr el ETL el panel muestra ceros.
 
-  sudo -u $SVC_USER node $APP_DIR/services/connectors/cli.js run --all
+  sudo -u $SVC_USER node $APP_DIR/services/orchestrator/cli.js tick
   sudo -u $SVC_USER node $APP_DIR/services/connectors/cli.js status
 
 Después:  curl -s localhost/api/status   (o el panel → Logs & Alertas)

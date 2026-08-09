@@ -17,19 +17,19 @@ Nada ni nadie necesita acceso entrante al servidor. No hay credenciales en el re
 
 ---
 
-## ⚠️ 0. Antes de empezar: elegí la rama correcta
+## 0. Antes de empezar: la rama desplegada
 
-El trabajo de la plataforma vive en `feat/ola1-connector-engine` y **el PR #1 todavía
-no está mergeado**. Si desplegás `main` tal cual está hoy, vas a levantar el piloto
-vial viejo (SIVU), no la plataforma OSINT.
+`main` es la rama desplegada (`OC_BRANCH=main` en el env). El trabajo se integra ahí
+por PR desde `feat/ola1-connector-engine`, y el timer de deploy lo recoge en 5 minutos.
 
-Dos caminos válidos:
+Antes de instalar, confirmá que `main` trae la plataforma y no solo el piloto vial:
 
-- **Recomendado:** mergear el PR #1 a `main` y desplegar `main` (`OC_BRANCH=main`).
-- **Mientras tanto:** desplegar la rama directamente, poniendo en el env
-  `OC_BRANCH=feat/ola1-connector-engine`.
+```bash
+git ls-tree --name-only origin/main | grep -q '^apps$' && echo "plataforma ok"
+```
 
-Verificá cuál corresponde antes del paso 2. Si no estás seguro, preguntá al humano.
+Si querés desplegar la rama de trabajo sin pasar por PR, poné
+`OC_BRANCH=feat/ola1-connector-engine` en `/etc/operacion-colombia.env`.
 
 ---
 
@@ -110,10 +110,10 @@ Lo que hay que revisar sí o sí:
 
 - **`OC_BRANCH`** — la rama del paso 0. Si desplegás la rama de trabajo en vez de
   `main`, cambialo acá o el deploy automático te va a bajar `main`.
-- **`OC_ALLOWED_TEST_FAILURES`** — hoy vale `1`. La rama arrastra un test rojo
-  preexistente (`test/ai.test.js`: el retrieval del RAG usa AND implícito en FTS, así
-  que una pregunta en lenguaje natural nunca encuentra evidencia). **Bajalo a `0`
-  apenas ese bug se corrija**: es deuda declarada, no una excepción permanente.
+- **`OC_ALLOWED_TEST_FAILURES`** — `0`: cualquier test rojo revierte el deploy. Subilo
+  solo para deuda declarada y con el rojo identificado, nunca como atajo.
+- **`EXPLORER_ADMIN_TOKEN`** — sin él, `POST /api/explorer/register` responde 503. La
+  escritura falla cerrada a propósito: ese endpoint alimenta el scheduler del ETL.
 - **`ANM_CAPAS`** — vacío por defecto. Sin esto, el dominio minería no se ingiere
   (ver paso 7).
 
@@ -166,7 +166,7 @@ al VPS). No lo hagas antes de tener el DNS resuelto.
 ```bash
 cd /opt/operacion-colombia
 sudo -u ocolombia node services/connectors/cli.js list        # fuentes registradas
-sudo -u ocolombia node services/connectors/cli.js run --all   # primera ingesta
+sudo -u ocolombia node services/orchestrator/cli.js tick      # primera ingesta + fan-out
 sudo -u ocolombia node services/connectors/cli.js status      # filas por fuente
 ```
 

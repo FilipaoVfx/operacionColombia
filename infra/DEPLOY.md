@@ -53,7 +53,7 @@ reinicia: un commit malo deja el servicio andando con la versión previa.
 git clone <repo> /opt/operacion-colombia && cd /opt/operacion-colombia
 sudo bash infra/deploy/bootstrap.sh
 sudo nano /etc/operacion-colombia.env      # OC_BRANCH, ANM_CAPAS, tokens
-sudo -u ocolombia node services/connectors/cli.js run --all
+sudo -u ocolombia node services/orchestrator/cli.js tick
 ```
 
 Detalle, verificaciones y solución de problemas: [`deploy/AGENTE.md`](deploy/AGENTE.md).

@@ -6,7 +6,7 @@
 # si el runtime la acepta en vez de asumir una u otra forma.
 #
 #   run-node.sh apps/api/server.js
-#   run-node.sh services/connectors/cli.js run --all
+#   run-node.sh services/orchestrator/cli.js tick
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 

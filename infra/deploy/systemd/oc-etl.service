@@ -9,8 +9,10 @@ User=ocolombia
 Group=ocolombia
 WorkingDirectory=/opt/operacion-colombia
 EnvironmentFile=/etc/operacion-colombia.env
-# el skip por etag/hash (M2) evita re-ingerir lo que no cambió
-ExecStart=/opt/operacion-colombia/infra/deploy/run-node.sh services/connectors/cli.js run --all
+# `tick` = scheduler (M5) + drenar la cola. NO usar `connectors run --all`: eso solo
+# ingiere y se salta el fan-out que reconstruye vistas, entidades, grafo, search y bbox.
+# El skip por etag/hash (M2) evita re-ingerir lo que no cambió.
+ExecStart=/opt/operacion-colombia/infra/deploy/run-node.sh services/orchestrator/cli.js tick
 TimeoutStartSec=3h
 StandardOutput=journal
 StandardError=journal

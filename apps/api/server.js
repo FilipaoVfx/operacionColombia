@@ -123,9 +123,22 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
   // handlers
   // -------------------------------------------------------------------------
   function handleMeta() {
+    // Qué dominios tienen geometría y cuál es su extensión real. Sin esto el mapa
+    // tendría que ofrecer capas vacías y encuadrar con coordenadas fijas; con esto
+    // solo muestra lo que hay y se ajusta a los datos.
+    const geo = prep(`
+      SELECT dominio, COUNT(*) n,
+             MIN(min_lon) min_lon, MIN(min_lat) min_lat,
+             MAX(max_lon) max_lon, MAX(max_lat) max_lat
+      FROM geo_bbox WHERE dominio IS NOT NULL GROUP BY dominio ORDER BY n DESC
+    `).all();
+    const conGeom = Object.fromEntries(geo.map((g) => [g.dominio, g.n]));
+
     return {
       version_datos: dataVersion(),
-      dominios: prep("SELECT dominio, registros n FROM rm_resumen_dominio ORDER BY n DESC").all(),
+      dominios: prep("SELECT dominio, registros n FROM rm_resumen_dominio ORDER BY n DESC")
+        .all().map((d) => ({ ...d, con_geom: conGeom[d.dominio] ?? 0 })),
+      geo,
       departamentos: prep(`
         SELECT d.cod_dpto codigo, MIN(d.dpto) nombre, COUNT(*) municipios
         FROM divipola d GROUP BY d.cod_dpto ORDER BY nombre

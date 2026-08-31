@@ -109,3 +109,16 @@ test("explorer rechaza dominio fuera de la allowlist con 400, no 502", async () 
   assert.equal(r.status, 400);
   assert.match((await r.json()).detail, /no permitido/);
 });
+
+test("meta expone qué dominios tienen geometría y su extensión real", async () => {
+  const m = await (await fetch(`${base}/api/meta`)).json();
+  // el fixture de este archivo son municipios sin geometría: la capa no debe ofrecerse
+  assert.ok(Array.isArray(m.geo), "meta.geo existe aunque no haya geometrías");
+  for (const d of m.dominios) {
+    assert.equal(typeof d.con_geom, "number", `${d.dominio} declara con_geom`);
+    assert.ok(d.con_geom <= d.n, "no puede haber más geometrías que registros");
+  }
+  for (const g of m.geo) {
+    assert.ok(g.min_lon <= g.max_lon && g.min_lat <= g.max_lat, "extensión coherente");
+  }
+});

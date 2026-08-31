@@ -127,9 +127,17 @@ export interface RegistroConLinaje {
   geom?: unknown;
 }
 
+/** Extensión real de las geometrías de un dominio: encuadra el mapa sin coordenadas fijas. */
+export interface ExtensionGeo {
+  dominio: Dominio;
+  n: number;
+  min_lon: number; min_lat: number; max_lon: number; max_lat: number;
+}
+
 export interface Meta {
   version_datos: string;
-  dominios: { dominio: Dominio; n: number }[];
+  dominios: { dominio: Dominio; n: number; con_geom: number }[];
+  geo: ExtensionGeo[];
   departamentos: { codigo: string; nombre: string; municipios: number }[];
   fuentes: {
     source_id: string; nombre: string; dominio: Dominio; conector: string;

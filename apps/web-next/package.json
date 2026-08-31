@@ -16,12 +16,14 @@
     "chartjs-chart-matrix": "^3.0.5",
     "chartjs-chart-sankey": "^0.15.0",
     "chartjs-chart-treemap": "^4.2.0",
+    "leaflet": "^1.9.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "wouter": "^3.10.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@types/leaflet": "^1.9.22",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",

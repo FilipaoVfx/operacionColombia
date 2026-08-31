@@ -11,6 +11,9 @@ import { Cargando, FechaRelativa, Numero } from "./components/base";
 // pagan esos bytes. Es la razón por la que el bundle base se mantiene chico.
 const PaginaContratacion = lazy(() =>
   import("./pages/Contratacion").then((m) => ({ default: m.PaginaContratacion })));
+// Leaflet y su CSS también van aparte: solo los descarga quien abre el mapa.
+const PaginaMapa = lazy(() =>
+  import("./pages/Mapa").then((m) => ({ default: m.PaginaMapa })));
 
 /**
  * Shell. La navegación lista solo lo que existe y tiene dato detrás: el mockup
@@ -42,6 +45,9 @@ function Contenido() {
           <Route path="/contratacion">
             <Suspense fallback={<Cargando filas={8} />}><PaginaContratacion /></Suspense>
           </Route>
+          <Route path="/mapa">
+            <Suspense fallback={<Cargando filas={8} />}><PaginaMapa /></Suspense>
+          </Route>
           <Route>
             <div className="p-8 text-center text-sm text-ink-muted">Página no encontrada.</div>
           </Route>
@@ -65,6 +71,7 @@ function Sidebar() {
       <p className="px-4 pb-1 pt-3 text-2xs uppercase tracking-wider text-ink-invert-muted">Explorar</p>
       <Item href="/" match="/">Inicio</Item>
       <Item href="/entidades" match="/entidades">Entidades</Item>
+      <Item href="/mapa" match="/mapa">Mapa</Item>
       <Item href="/contratacion" match="/contratacion">Contratación</Item>
 
       <div className="mt-auto space-y-2 border-t border-white/10 px-4 py-3 text-2xs">

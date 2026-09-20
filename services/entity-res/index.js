@@ -177,7 +177,7 @@ export class EntityResolver {
 // Extractores por dominio: de un registro unificado salen 0..N referencias de entidad.
 // Añadir un dominio nuevo = añadir un extractor aquí.
 // ---------------------------------------------------------------------------
-export const EXTRACTORS = {
+const EXTRACTORS = {
   territorio(reg, campos) {
     const refs = [];
     if (campos.cod_mpio) refs.push({ tipo: "Municipio", codigo: campos.cod_mpio, nombre: campos.nom_mpio, atributos: { dpto: campos.dpto } });
@@ -222,7 +222,7 @@ export const EXTRACTORS = {
 // (nit_entidad + referencia|proceso), independiente del nombre de columna de
 // cada dataset — el mapRow de cada fuente ya normalizó.
 // ---------------------------------------------------------------------------
-export const SECOP_PRECEDENCE = ["jbjy-vk9h", "tb27-zmix", "rpmr-utcd"];
+const SECOP_PRECEDENCE = ["jbjy-vk9h", "tb27-zmix", "rpmr-utcd"];
 
 const normKey = (v) => (v == null ? "" : String(v).toUpperCase().replace(/[^A-Z0-9]/g, ""));
 

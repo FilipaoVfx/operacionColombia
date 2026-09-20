@@ -1,6 +1,6 @@
 // M5 — Tabla-cola SQL (ADR-004): enqueue, claim atómico, reintentos con backoff,
 // dead-letter. Sin broker externo: transaccional sobre el mismo SQLite (osint.db).
-export function migrateQueue(db) {
+function migrateQueue(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS jobs (
       job_id       INTEGER PRIMARY KEY AUTOINCREMENT,

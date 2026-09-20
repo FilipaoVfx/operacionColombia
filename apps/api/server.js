@@ -5,6 +5,7 @@
 // Caché M15: respuestas clavadas a la versión de datos (etl_runs + read_models),
 // ETag/If-None-Match → 304; invalidación por versión, no TTL ciego.
 import http from "node:http";
+import { isIP } from "node:net";
 import { gzipSync } from "node:zlib";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -28,7 +29,73 @@ const WEB_DIR = join(__dirname, "..", "web");
 // Panel nuevo (Vite). dist/ no se versiona: se construye en el servidor.
 const NEXT_DIR = join(__dirname, "..", "web-next", "dist");
 
-export function createApp(db, { webDir = WEB_DIR } = {}) {
+export function createFixedWindowRateLimiter({
+  max = 10,
+  windowMs = 60_000,
+  maxBuckets = 10_000,
+  now = Date.now,
+} = {}) {
+  const safeMax = Number.isInteger(max) && max > 0 ? max : 10;
+  const safeWindow = Number.isFinite(windowMs) && windowMs > 0 ? windowMs : 60_000;
+  const safeMaxBuckets = Number.isInteger(maxBuckets) && maxBuckets > 0 ? maxBuckets : 10_000;
+  const buckets = new Map();
+  const overflowKey = Symbol("rate-limit-overflow");
+  let nextSweepAt = 0;
+
+  return {
+    take(key) {
+      const current = now();
+      if (current >= nextSweepAt) {
+        for (const [bucketKey, bucket] of buckets) {
+          if (current >= bucket.resetAt) buckets.delete(bucketKey);
+        }
+        nextSweepAt = current + safeWindow;
+      }
+
+      const bucketKey = buckets.has(key) || buckets.size < safeMaxBuckets ? key : overflowKey;
+      let bucket = buckets.get(bucketKey);
+      if (!bucket || current >= bucket.resetAt) {
+        bucket = { count: 0, resetAt: current + safeWindow };
+        buckets.set(bucketKey, bucket);
+      }
+      if (bucket.count >= safeMax) {
+        return {
+          allowed: false,
+          limit: safeMax,
+          remaining: 0,
+          retryAfter: Math.max(1, Math.ceil((bucket.resetAt - current) / 1000)),
+        };
+      }
+      bucket.count++;
+      return {
+        allowed: true,
+        limit: safeMax,
+        remaining: safeMax - bucket.count,
+        retryAfter: Math.max(1, Math.ceil((bucket.resetAt - current) / 1000)),
+      };
+    },
+  };
+}
+
+function requestIp(req) {
+  const direct = req.socket.remoteAddress || "unknown";
+  const loopback = direct === "127.0.0.1" || direct === "::1" || direct === "::ffff:127.0.0.1";
+  if (loopback) {
+    const forwarded = req.headers["x-forwarded-for"];
+    const first = typeof forwarded === "string" ? forwarded.split(",", 1)[0].trim() : "";
+    if (isIP(first)) return first;
+  }
+  return direct;
+}
+
+export function createApp(db, {
+  webDir = WEB_DIR,
+  aiAsk = ask,
+  aiRateLimitMax = Number(process.env.AI_RATE_LIMIT_MAX || 10),
+  aiRateLimitWindowMs = Number(process.env.AI_RATE_LIMIT_WINDOW_MS || 60_000),
+  corsAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS || "",
+  now = Date.now,
+} = {}) {
   migrateViews(db);
   migrateSearch(db);
   migrateGeo(db);
@@ -41,6 +108,41 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
   }
 
   const stmtCache = new Map();
+  const aiLimiter = createFixedWindowRateLimiter({
+    max: aiRateLimitMax,
+    windowMs: aiRateLimitWindowMs,
+    now,
+  });
+  const allowedOrigins = new Set(
+    String(corsAllowedOrigins).split(",").map((origin) => origin.trim()).filter(Boolean),
+  );
+
+  function isOriginAllowed(req, origin) {
+    if (!origin) return true;
+    if (allowedOrigins.has("*")) return true;
+    try {
+      const parsed = new URL(origin);
+      return parsed.host === req.headers.host || allowedOrigins.has(parsed.origin);
+    } catch {
+      return false;
+    }
+  }
+
+  function corsHeaders(req) {
+    const origin = req.headers.origin;
+    if (typeof origin !== "string" || !isOriginAllowed(req, origin)) return {};
+    return {
+      "Access-Control-Allow-Origin": allowedOrigins.has("*") ? "*" : origin,
+      Vary: "Origin",
+    };
+  }
+
+  function appendVary(headers, value) {
+    const values = new Set(String(headers.Vary || "").split(",").map((v) => v.trim()).filter(Boolean));
+    values.add(value);
+    headers.Vary = [...values].join(", ");
+  }
+
   function prep(sql) {
     let s = stmtCache.get(sql);
     if (!s) { s = db.prepare(sql); stmtCache.set(sql, s); }
@@ -540,12 +642,12 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
   // -------------------------------------------------------------------------
   function send(req, res, status, body, contentType, extraHeaders = {}) {
     let buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
-    const headers = { "Content-Type": contentType, "Access-Control-Allow-Origin": "*", ...extraHeaders };
+    const headers = { "Content-Type": contentType, ...corsHeaders(req), ...extraHeaders };
     const ae = req.headers["accept-encoding"] || "";
     if (ae.includes("gzip") && buf.length > 1024) {
       buf = gzipSync(buf);
       headers["Content-Encoding"] = "gzip";
-      headers["Vary"] = "Accept-Encoding";
+      appendVary(headers, "Accept-Encoding");
     }
     headers["Content-Length"] = buf.length;
     res.writeHead(status, headers);
@@ -558,7 +660,7 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
     if (hit) res.cacheHit = true; // leído por el wrapper de métricas (M14)
     if (req.headers["if-none-match"] === etag) {
       res.cacheHit = true; // 304: el cliente ya tiene la versión vigente
-      res.writeHead(304, { ETag: etag, "Cache-Control": `public, max-age=${maxAge}` });
+      res.writeHead(304, { ...corsHeaders(req), ETag: etag, "Cache-Control": `public, max-age=${maxAge}` });
       return res.end();
     }
     send(req, res, 200, body, "application/json; charset=utf-8", {
@@ -566,9 +668,9 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       "Cache-Control": `public, max-age=${maxAge}`,
     });
   }
-  function sendJson(req, res, obj, { status = 200, cache = 0 } = {}) {
+  function sendJson(req, res, obj, { status = 200, cache = 0, headers = {} } = {}) {
     send(req, res, status, JSON.stringify(obj), "application/json; charset=utf-8",
-      { "Cache-Control": cache ? `public, max-age=${cache}` : "no-store" });
+      { "Cache-Control": cache ? `public, max-age=${cache}` : "no-store", ...headers });
   }
 
   /**
@@ -647,6 +749,18 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
 
   async function route(req, res) {
     try {
+      const origin = req.headers.origin;
+      if (typeof origin === "string" && !isOriginAllowed(req, origin)) {
+        return sendJson(req, res, { error: "origen no permitido" }, { status: 403 });
+      }
+      if (req.method === "OPTIONS") {
+        return send(req, res, 204, "", "text/plain", {
+          "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, X-Admin-Token",
+          "Access-Control-Max-Age": "600",
+          "Cache-Control": "no-store",
+        });
+      }
       const url = new URL(req.url, `http://${req.headers.host}`);
       const path = url.pathname;
       const qp = url.searchParams;
@@ -685,10 +799,26 @@ export function createApp(db, { webDir = WEB_DIR } = {}) {
       if (path === "/api/ai/ask") {
         const q = qp.get("q");
         if (!q || !q.trim()) return sendJson(req, res, { error: "falta ?q=<pregunta>" }, { status: 400 });
+        const rate = aiLimiter.take(requestIp(req));
+        const rateHeaders = {
+          "X-RateLimit-Limit": String(rate.limit),
+          "X-RateLimit-Remaining": String(rate.remaining),
+        };
+        if (!rate.allowed) {
+          return sendJson(req, res, { error: "demasiadas consultas", retry_after_s: rate.retryAfter }, {
+            status: 429,
+            headers: { ...rateHeaders, "Retry-After": String(rate.retryAfter) },
+          });
+        }
         try {
-          return sendJson(req, res, await ask(db, q.trim(), { limit: Math.min(Number(qp.get("limit")) || 8, 20) }));
+          return sendJson(req, res,
+            await aiAsk(db, q.trim(), { limit: Math.min(Number(qp.get("limit")) || 8, 20) }),
+            { headers: rateHeaders });
         } catch (e) {
-          return sendJson(req, res, { error: "ai no disponible", detail: String(e.message) }, { status: 502 });
+          return sendJson(req, res, { error: "ai no disponible", detail: String(e.message) }, {
+            status: 502,
+            headers: rateHeaders,
+          });
         }
       }
       if (path === "/api/meta") return sendCachedJson(req, res, cacheKey, () => handleMeta(), { maxAge: 300 });

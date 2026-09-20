@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/web-next/package-lock.json
+
+      - name: Install quality tools
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix apps/web-next
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Dead code
+        run: npm run deadcode
+
+      - name: Tests and coverage
+        run: npm run coverage
+
+      - name: Frontend typecheck
+        run: npm run typecheck --prefix apps/web-next
+
+      - name: Frontend production build
+        run: npm run build --prefix apps/web-next
+
+      - name: Shell syntax and ShellCheck
+        run: |
+          bash -n infra/deploy/*.sh
+          shellcheck infra/deploy/*.sh

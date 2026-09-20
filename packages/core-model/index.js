@@ -13,7 +13,7 @@ export function stableStringify(v) {
   return "{" + Object.keys(v).sort().map((k) => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
 }
 
-export function stripAccents(s) {
+function stripAccents(s) {
   return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 

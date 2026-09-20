@@ -93,4 +93,6 @@ ruta, corridas ETL) y **Datasets** (filas y frescura por fuente).
   `register` exigiendo `X-Admin-Token` (401 sin él, 201 con él).
 - **2026-08-09 (deploy por pull activo):** `oc-deploy.timer` cada 5 min contra `main`;
   primera corrida real `5eddd50 → 4509f91` en 11 s (tests 89/89, restart, healthcheck ok).
-- **Pendiente:** rate-limit y CORS en la Read API.
+- **2026-09-20 (seguridad y calidad):** límite por IP en `/api/ai/ask`, CORS cerrado
+  al mismo origen por defecto, CI en GitHub, lint, código muerto y cobertura. Los
+  orígenes web externos se habilitan explícitamente con `CORS_ALLOWED_ORIGINS`.

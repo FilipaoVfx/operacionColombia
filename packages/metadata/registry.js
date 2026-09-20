@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { mkdirSync } from "node:fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const OSINT_DB_PATH = process.env.OSINT_DB || join(__dirname, "..", "..", "data", "osint.db");
+const OSINT_DB_PATH = process.env.OSINT_DB || join(__dirname, "..", "..", "data", "osint.db");
 
 export function openOsintDb() {
   mkdirSync(dirname(OSINT_DB_PATH), { recursive: true });

@@ -5,6 +5,7 @@
 # Flujo: fetch → ¿hay cambios? → tests → reinicio → healthcheck → (si falla) rollback.
 # Idempotente: si no hay commits nuevos, no toca nada y sale 0.
 set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 APP_DIR="${OC_APP_DIR:-/opt/operacion-colombia}"
 BRANCH="${OC_BRANCH:-main}"
@@ -37,12 +38,19 @@ if [ -f package-lock.json ]; then
 fi
 
 log "corriendo tests"
-TEST_OUT="$(npm test 2>&1 || true)"
-FAILED="$(printf '%s' "$TEST_OUT" | sed -n 's/^# fail \([0-9]*\)$/\1/p' | tail -1)"
-FAILED="${FAILED:-desconocido}"
-if [ "$FAILED" = "desconocido" ]; then
-  printf '%s\n' "$TEST_OUT" | tail -20
-  git reset --hard --quiet "$PREV"; die "no pude leer el resultado de los tests; revertido a ${PREV:0:8}"
+set +e
+TEST_OUT="$(npm test 2>&1)"
+TEST_STATUS=$?
+set -e
+
+FAILED=0
+if [ "$TEST_STATUS" -ne 0 ]; then
+  FAILED="$(printf '%s\n' "$TEST_OUT" | "$SCRIPT_DIR/parse-test-failures.sh")"
+  FAILED="${FAILED:-desconocido}"
+  if [ "$FAILED" = "desconocido" ]; then
+    printf '%s\n' "$TEST_OUT" | tail -20
+    git reset --hard --quiet "$PREV"; die "tests terminaron con código $TEST_STATUS y sin resumen legible; revertido a ${PREV:0:8}"
+  fi
 fi
 if [ "$FAILED" -gt "$ALLOWED_FAILURES" ]; then
   printf '%s\n' "$TEST_OUT" | grep -E "^not ok" || true
@@ -75,7 +83,7 @@ log "reiniciando $SERVICE"
 sudo -n systemctl restart "$SERVICE" || die "no pude reiniciar $SERVICE"
 
 # El healthcheck es la red de seguridad: si el servicio no responde, se vuelve atrás.
-for i in $(seq 1 15); do
+for _ in $(seq 1 15); do
   if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
     log "healthcheck ok — desplegado ${NEXT:0:8}"
     curl -fsS "$HEALTH_URL"; echo

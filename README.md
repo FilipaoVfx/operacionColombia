@@ -6,9 +6,9 @@
 > oficiales, normalizados en un modelo único y trazable, y expuestos en un panel de
 > control tipo mapa + dashboard.
 
-**Estado:** definición de problema · piloto vial (SIVU) funcional como módulo 1.
-**Documento:** visión, objetivos, OKRs y catálogo de datos. *No* especifica tecnología
-(ver `prd.md` / `srs.md` para el detalle técnico del piloto).
+**Estado:** plataforma multi-dominio funcional · panel legado + panel React en `/next` ·
+ingesta y vistas operativas. **Documento:** visión, objetivos, OKRs y catálogo de datos;
+ver `PLANNING.md`, `infra/DEPLOY.md` y `srs.md` para arquitectura y operación.
 
 ---
 
@@ -227,7 +227,7 @@ Para pasar de "datos apilados" a "datos cruzados":
 
 ## 12. Estado actual
 
-*(actualizado 2026-07-14 — detalle por módulo en [PLANNING.md](PLANNING.md) §7)*
+*(actualizado 2026-09-20 — detalle por módulo en [PLANNING.md](PLANNING.md) §7)*
 
 - ✅ **Plataforma multi-dominio operativa**: motor de conectores (Socrata + ArcGIS),
   metadata/linaje/freshness, DIVIPOLA + normalización, storage CQRS, orquestador con
@@ -237,6 +237,10 @@ Para pasar de "datos apilados" a "datos cruzados":
 - ✅ **Dominios con datos**: territorio (DIVIPOLA), economía (PIB), agro (EVA), vial
   (INVIAS), contratación (SECOP II, corte >500M COP 2026), entidades (CHIP).
 - ✅ Observabilidad: `/api/status` compara budget §2.3 del PLANNING contra lo medido.
+- ✅ Calidad continua: CI verifica lint, código muerto, cobertura, ShellCheck, tipos y
+  build del panel antes de integrar cambios.
+- ✅ Seguridad de API: escritura autenticada, allowlist SSRF, CORS cerrado al mismo
+  origen y límite por IP para consultas de IA.
 - 🟡 Agentes de investigación multi-paso (M13) pendientes de casos de uso reales.
 - ⚪ Ampliaciones en backlog: más fuentes por dominio, vector search (ADR-006),
   dominios P2/P3 del catálogo.
@@ -250,10 +254,34 @@ Para pasar de "datos apilados" a "datos cruzados":
 - `prd.md` — requisitos de producto (piloto vial).
 - `srs.md` — requisitos técnicos + fuentes y URLs (piloto vial).
 - `estructura.md` — estructura del proyecto.
+- [`infra/DEPLOY.md`](infra/DEPLOY.md) — topología, despliegue y operación.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — entorno local, verificaciones y flujo de PR.
+- [`SECURITY.md`](SECURITY.md) — versiones soportadas y reporte responsable.
+- [`LICENSE`](LICENSE) — licencia Apache 2.0 del software; los datos conservan la
+  licencia declarada por cada fuente oficial.
 
 ---
 
-## 14. Glosario
+## 14. Desarrollo y calidad
+
+Requiere Node.js 22.5 o superior. La API no tiene dependencias de runtime; las
+herramientas de desarrollo se instalan desde el lockfile raíz y el panel desde el suyo:
+
+```bash
+npm ci
+npm ci --prefix apps/web-next
+npm test
+npm run quality
+npm run typecheck --prefix apps/web-next
+npm run build --prefix apps/web-next
+```
+
+La cobertura genera `coverage/lcov-report/index.html`. El flujo completo también se
+ejecuta en GitHub Actions para cada pull request y cada push a `main`.
+
+---
+
+## 15. Glosario
 
 - **OSINT** — Open Source Intelligence: inteligencia a partir de fuentes públicas.
 - **Dominio / vertical** — un tipo de recurso (vías, contratación, minería…).

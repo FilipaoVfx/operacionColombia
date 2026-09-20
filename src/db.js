@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { mkdirSync } from "node:fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const DB_PATH = join(__dirname, "..", "data", "sivu.db");
+const DB_PATH = join(__dirname, "..", "data", "sivu.db");
 
 export function openDb({ create = false } = {}) {
   mkdirSync(join(__dirname, "..", "data"), { recursive: true });

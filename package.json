@@ -13,6 +13,10 @@
     "start:piloto": "node --experimental-sqlite src/server.js",
     "ingest": "node --experimental-sqlite src/ingest.js",
     "test": "node --test \"test/**/*.test.js\"",
+    "coverage": "c8 --reporter=text --reporter=lcov --check-coverage --lines 70 --functions 70 --branches 60 node --test \"test/**/*.test.js\"",
+    "lint": "biome lint .",
+    "deadcode": "knip",
+    "quality": "npm run lint && npm run deadcode && npm run coverage",
     "connectors": "node services/connectors/cli.js",
     "etl": "node services/connectors/cli.js run --all",
     "orchestrator": "node services/orchestrator/cli.js",
@@ -22,5 +26,25 @@
     "geo": "node services/geo-indexer/cli.js",
     "anm": "node services/arcgis-explorer/cli.js",
     "anm:perfil": "node services/arcgis-explorer/cli.js --profile --dict mineria --sample 500"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "c8": "^12.0.0",
+    "knip": "^6.37.0"
+  },
+  "knip": {
+    "entry": [
+      "src/server.js",
+      "src/ingest.js",
+      "services/**/cli.js",
+      "test/**/*.test.js"
+    ],
+    "project": [
+      "apps/api/**/*.js",
+      "packages/**/*.js",
+      "services/**/*.js",
+      "src/**/*.js",
+      "test/**/*.js"
+    ]
   }
 }

@@ -69,7 +69,7 @@ async function* readLines(path, encoding) {
 }
 
 /** Parser CSV mínimo: separador configurable, comillas dobles con escape "". */
-export function parseCsvLine(line, sep = ",") {
+function parseCsvLine(line, sep = ",") {
   const out = [];
   let cur = "";
   let inQuotes = false;

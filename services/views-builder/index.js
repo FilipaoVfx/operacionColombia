@@ -18,7 +18,7 @@ export function migrateViews(db) {
 
 // Catálogo de vistas (README §7/§10 + casos de uso del catálogo).
 // domain: qué ingesta la invalida (null = cualquier dominio la invalida).
-export const VIEWS = [
+const VIEWS = [
   {
     name: "rm_resumen_dominio",
     domain: null,
